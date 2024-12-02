@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Object = System.Object;
+using Random = UnityEngine.Random;
 
 public class Test1 : MonoBehaviour
 {
@@ -22,6 +23,12 @@ public class Test1 : MonoBehaviour
     {
         public Vector3 position;
         public Vector4 color;
+        public Vector3 velocity;
+
+        public static int GetSize()
+        {
+            return sizeof(float) * 3 + sizeof(float) * 4 + sizeof(float) * 3;
+        }
     }
     
     void Start()
@@ -43,9 +50,10 @@ public class Test1 : MonoBehaviour
             {
                 data[i * 256 + j].position = new Vector3(i, 0, j);
                 data[i * 256 + j].color = new Vector4(1, 0, 0, 1);
+                data[i * 256 + j].velocity = Random.insideUnitSphere;
             }
         }
-        _buffer = new ComputeBuffer(256*256, sizeof(float)*7);
+        _buffer = new ComputeBuffer(256*256, PositionData.GetSize());
         _buffer.SetData(data);
     }
 

@@ -25,6 +25,7 @@ Shader "Custom/InstanceShader"
             {
                 float3 position;
                 float4 color;
+                float3 velocity;
             };
 
             StructuredBuffer<PositionData> _PositionBuffer;

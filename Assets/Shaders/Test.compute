@@ -8,17 +8,18 @@ struct PositionData
 {
     float3 position;
     float4 color;
+    float3 velocity;
 };
 
 RWStructuredBuffer<PositionData> _PositionBuffer;
-
+float _Time;
 [numthreads(8,8,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    // TODO: insert actual code here!
-
     PositionData data;
-    data.position = float3(id.x,0,id.y);
+    int idx = id.x + id.y * 256;
+    data.position = _PositionBuffer[idx].position + _PositionBuffer[id.x + id.y * 256].velocity * _Time;
     data.color = float4(id.x/255.0f, id.y/255.0f, 0, 1);
-    _PositionBuffer[id.x + id.y * 256] = data;
+    data.velocity = _PositionBuffer[idx].velocity;
+    _PositionBuffer[idx] = data;
 }
