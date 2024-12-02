@@ -337,12 +337,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7ba32797ee1689043abc13316a8b443a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  height: 256
-  width: 256
+  material: {fileID: 2100000, guid: 9c28e7fbfbd85de4785194b0d85338f8, type: 2}
+  mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
   computeShader: {fileID: 7200000, guid: 3ece72968a2e27c478b66943fe87aa41, type: 3}
-  positionTexture: {fileID: 8400000, guid: 34470be52d9d406468fa9c729ee925e0, type: 2}
-  instanceMesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
-  instanceMaterial: {fileID: 2100000, guid: 9c28e7fbfbd85de4785194b0d85338f8, type: 2}
 --- !u!4 &2079652772
 Transform:
   m_ObjectHideFlags: 0
