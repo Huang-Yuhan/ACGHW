@@ -1,0 +1,43 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+struct GranuleDataType
+{
+    float3 position;
+    float3 velocity;
+    float3 angularVelocity;
+    float4 quaternion;
+};
+
+RWStructuredBuffer<float3> _ParticlePositionBuffer;
+RWStructuredBuffer<float3> _ParticleVelocityBuffer;
+RWStructuredBuffer<GranuleDataType> _GranuleBuffer;
+float _Time;
+
+void CSMain();
+void TestSimulation(uint3 id : SV_DispatchThreadID);
+inline uint GetGranuleIndex(uint particleIndex)
+{
+    return particleIndex/4;
+}
+inline uint GetFirstParticleIndex(uint granuleIndex)
+{
+    return granuleIndex*4;
+}
+
+[numthreads(64,1,1)]
+void CSMain (uint3 granuleIndex : SV_DispatchThreadID)
+{
+    TestSimulation(granuleIndex);
+}
+
+void TestSimulation(uint3 granuleIndex : SV_DispatchThreadID)
+{
+
+    uint firstParticleIndex = GetFirstParticleIndex(granuleIndex.x);
+
+    _ParticlePositionBuffer[firstParticleIndex] = _ParticlePositionBuffer[firstParticleIndex] + _ParticleVelocityBuffer[firstParticleIndex] * _Time;
+    _ParticlePositionBuffer[firstParticleIndex+1] = _ParticlePositionBuffer[firstParticleIndex+1] + _ParticleVelocityBuffer[firstParticleIndex+1] * _Time;
+    _ParticlePositionBuffer[firstParticleIndex+2] = _ParticlePositionBuffer[firstParticleIndex+2] + _ParticleVelocityBuffer[firstParticleIndex+2] * _Time;
+    _ParticlePositionBuffer[firstParticleIndex+3] = _ParticlePositionBuffer[firstParticleIndex+3] + _ParticleVelocityBuffer[firstParticleIndex+3] * _Time;
+}

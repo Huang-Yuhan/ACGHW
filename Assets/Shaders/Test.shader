@@ -1,4 +1,4 @@
-Shader "Custom/InstanceShader"
+Shader "Custom/Test"
 {
     SubShader
     {
