@@ -112,7 +112,7 @@ public class SandSimulation : MonoBehaviour
         GranuleDataType[] granuleData = new GranuleDataType[granuleCount];
         for(int i = 0; i < granuleCount; i++)
         {
-            granuleData[i].Position = new Vector3(Random.Range(-1.0f,1.0f),2,Random.Range(-1.0f,1.0f));
+            granuleData[i].Position = new Vector3(0,Random.Range(0.0f,2.0f),0);
             granuleData[i].Velocity = Vector3.zero;
             granuleData[i].AngularVelocity = Vector3.zero;
             granuleData[i].Rotation = Quaternion.identity;

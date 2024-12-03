@@ -36,7 +36,7 @@ void UpdateParticle(uint particleIndex);
 void UpdateGranule(uint granuleIndex);
 float3x3 QuaternionToMatrix(float4 quaternion);
 float3 ParticleContactForceSum(uint particleIndex);         //计算particle的接触力
-float3 CalculateContactForce(uint particleIndex1,uint particleIndex2);    //计算两个particle之间的接触力
+float3 CalculateContactForce(uint particleIndex1,uint particleIndex2);    //计算两个particle之间的接触力，返回的是particle1受到的力
 
 
 inline uint GetGranuleIndex(uint particleIndex)
@@ -143,16 +143,19 @@ float3 ParticleContactForceSum(uint particleIndex)
 {
     float3 sumForce = float3(0,0,0);
 
-    [unroll(64)]
-    for(int i=0;i<64;i++)
+    for(uint i=0;i<(uint)_GranuleCount;i++)
     {
         
-        int firstParticleIndex = GetFirstParticleIndex(i);
+        uint firstParticleIndex = GetFirstParticleIndex(i);
         if(GetGranuleIndex(particleIndex)==i)
         {
             continue;
         }
-        float3 contactForce = CalculateContactForce(particleIndex,firstParticleIndex)+CalculateContactForce(particleIndex,firstParticleIndex+1)+CalculateContactForce(particleIndex,firstParticleIndex+2)+CalculateContactForce(particleIndex,firstParticleIndex+3);
+        float3 contactForce = float3(0,0,0);
+        contactForce+=CalculateContactForce(particleIndex,firstParticleIndex);
+        contactForce+=CalculateContactForce(particleIndex,firstParticleIndex+1);
+        contactForce+=CalculateContactForce(particleIndex,firstParticleIndex+2);
+        contactForce+=CalculateContactForce(particleIndex,firstParticleIndex+3);
         sumForce+=contactForce;
     }
     
@@ -161,7 +164,11 @@ float3 ParticleContactForceSum(uint particleIndex)
 
 float3 CalculateContactForce(uint particleIndex1,uint particleIndex2)    //计算两个particle之间的接触力
 {
-    float overlap_degree = max(0,_ParticleRadius*2-length(_ParticlePositionBuffer[particleIndex1]-_ParticlePositionBuffer[particleIndex2]));
+    float overlap_degree = _ParticleRadius*2-length(_ParticlePositionBuffer[particleIndex1]-_ParticlePositionBuffer[particleIndex2]);
+    if(overlap_degree<=0)
+    {
+        return float3(0,0,0);
+    }
     float3 contactNormal = normalize(_ParticlePositionBuffer[particleIndex1]-_ParticlePositionBuffer[particleIndex2]);
     float3 contactPointPosition = (_ParticlePositionBuffer[particleIndex1]+_ParticlePositionBuffer[particleIndex2])/2;      //由于半径相同，所以我们认为接触点在两个粒子的连线中点
     uint granuleIndex1 = GetGranuleIndex(particleIndex1);

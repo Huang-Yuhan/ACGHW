@@ -153,10 +153,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   material: {fileID: 2100000, guid: d06fcfbfeb9c24345872434c0e466f3c, type: 2}
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
-  sandCount: 256
+  sandCount: 2
   computeShader: {fileID: 7200000, guid: bbcf3f225a6c919488808d88c6eb73b7, type: 3}
   sandRadius: 0.1
   particleMass: 1
+  elasticityRestoringCoefficient: 0.1
+  contactTime: 0.02
+  frictionCoefficient: 0.5
+  velocityDampingCoefficient: 0.5
 --- !u!4 &756179831
 Transform:
   m_ObjectHideFlags: 0
