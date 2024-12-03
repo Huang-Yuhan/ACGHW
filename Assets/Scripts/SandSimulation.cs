@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 using Random = UnityEngine.Random;
 
 
@@ -20,6 +21,8 @@ public class SandSimulation : MonoBehaviour
     public ComputeShader computeShader;
     [Tooltip("沙子的半径")]
     public float sandRadius = 0.1f;                         //同样也是粒子的半径
+    [Tooltip("粒子的质量")] 
+    public float particleMass = 1.0f;
     
     /// <summary>
     /// https://zh.wikipedia.org/wiki/%E6%AD%A3%E5%9B%9B%E9%9D%A2%E9%AB%94
@@ -33,19 +36,28 @@ public class SandSimulation : MonoBehaviour
         new Vector3(0,-1,1/(float)Math.Sqrt(2))
     };
     private int _kernel;
-    private ComputeBuffer _ParticlePositionBuffer;
-    private ComputeBuffer _ParticleVelocityBuffer;
-    private ComputeBuffer _GranuleDataBuffer;
-    private RenderParams _RenderParams;
-    private GraphicsBuffer _CommandBuffer;
-    GraphicsBuffer.IndirectDrawIndexedArgs[] commandData;
+    private ComputeBuffer _particlePositionBuffer;
+    private ComputeBuffer _particleVelocityBuffer;
+    private ComputeBuffer _granuleDataBuffer;
+    private RenderParams _renderParams;
+    private GraphicsBuffer _commandBuffer;
+    private GraphicsBuffer.IndirectDrawIndexedArgs[] _commandData;
+    
+    //ids
+    private int _particlePositionBufferId;
+    private int _particleVelocityBufferId;
+    private int _granuleDataBufferId;
+    private int _granuleCountId;
+    private int _particleMassId;
+    private int _deltaTimeId;
+    private int _particleRadiusId;
 
     struct GranuleDataType
     {
-        public Vector3 position;
-        public Vector3 velocity;
-        public Vector3 angularVelocity;
-        public Quaternion rotation;
+        public Vector3 Position;
+        public Vector3 Velocity;
+        public Vector3 AngularVelocity;
+        public Quaternion Rotation;
         public static int GetSize()
         {
             return sizeof(float) * 3 * 3 + sizeof(float) * 4;
@@ -54,16 +66,24 @@ public class SandSimulation : MonoBehaviour
     
     void SetupCommandBuffer()
     {
-        _CommandBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 1, GraphicsBuffer.IndirectDrawIndexedArgs.size);
-        commandData = new GraphicsBuffer.IndirectDrawIndexedArgs[1];
-        commandData[0].indexCountPerInstance = mesh.GetIndexCount(0);
-        commandData[0].instanceCount = (uint)particleCount;
-        _CommandBuffer.SetData(commandData);
+        _commandBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 1, GraphicsBuffer.IndirectDrawIndexedArgs.size);
+        _commandData = new GraphicsBuffer.IndirectDrawIndexedArgs[1];
+        _commandData[0].indexCountPerInstance = mesh.GetIndexCount(0);
+        _commandData[0].instanceCount = (uint)particleCount;
+        _commandBuffer.SetData(_commandData);
         //设置Scale
         material.SetFloat("_Scale", sandRadius);
-        _RenderParams = new RenderParams(material);
-        _RenderParams.worldBounds = new Bounds(Vector3.zero, 100 * Vector3.one);//设定边界
+        _renderParams = new RenderParams(material);
+        _renderParams.worldBounds = new Bounds(Vector3.zero, 100 * Vector3.one);//设定边界
         
+        //设置ids
+        _particlePositionBufferId = Shader.PropertyToID("_ParticlePositionBuffer");
+        _particleVelocityBufferId = Shader.PropertyToID("_ParticleVelocityBuffer");
+        _granuleDataBufferId = Shader.PropertyToID("_GranuleBuffer");
+        _granuleCountId = Shader.PropertyToID("_GranuleCount");
+        _particleMassId = Shader.PropertyToID("_ParticleMass");
+        _deltaTimeId = Shader.PropertyToID("_DeltaTime");
+        _particleRadiusId = Shader.PropertyToID("_ParticleRadius");
     }
     
     void SetupSimulation()
@@ -74,22 +94,24 @@ public class SandSimulation : MonoBehaviour
         GranuleDataType[] granuleData = new GranuleDataType[granuleCount];
         for(int i = 0; i < granuleCount; i++)
         {
-            granuleData[i].position = new Vector3(Random.Range(-10, 10), Random.Range(-10, 10), Random.Range(-10, 10));
-            granuleData[i].velocity = Random.insideUnitSphere;
+            granuleData[i].Position = new Vector3(Random.Range(-1.0f,1.0f),2,Random.Range(-1.0f,1.0f));
+            granuleData[i].Velocity = Vector3.zero;
+            granuleData[i].AngularVelocity = Vector3.zero;
+            granuleData[i].Rotation = Quaternion.identity;
             for(int j = 0; j < 4; j++)
             {
-                particlePositions[i * 4 + j] = granuleData[i].position + tetrahedronVertices[j] * sandRadius / 2;
-                particleVelocities[i * 4 + j] = granuleData[i].velocity / 10;
+                particlePositions[i * 4 + j] = granuleData[i].Position + tetrahedronVertices[j] * sandRadius / 2;
+                particleVelocities[i * 4 + j] = granuleData[i].Velocity / 10;
             }
         }
         
-        _ParticlePositionBuffer = new ComputeBuffer(particleCount, sizeof(float) * 3);
-        _ParticleVelocityBuffer = new ComputeBuffer(particleCount, sizeof(float) * 3);
-        _GranuleDataBuffer = new ComputeBuffer(granuleCount, GranuleDataType.GetSize());
+        _particlePositionBuffer = new ComputeBuffer(particleCount, sizeof(float) * 3);
+        _particleVelocityBuffer = new ComputeBuffer(particleCount, sizeof(float) * 3);
+        _granuleDataBuffer = new ComputeBuffer(granuleCount, GranuleDataType.GetSize());
         
-        _ParticlePositionBuffer.SetData(particlePositions);
-        _ParticleVelocityBuffer.SetData(particleVelocities);
-        _GranuleDataBuffer.SetData(granuleData);
+        _particlePositionBuffer.SetData(particlePositions);
+        _particleVelocityBuffer.SetData(particleVelocities);
+        _granuleDataBuffer.SetData(granuleData);
     }
     
     void Setup()
@@ -100,10 +122,10 @@ public class SandSimulation : MonoBehaviour
 
     private void OnDestroy()
     {
-        _ParticlePositionBuffer?.Release();
-        _ParticleVelocityBuffer?.Release();
-        _GranuleDataBuffer?.Release();
-        _CommandBuffer?.Release();
+        _particlePositionBuffer?.Release();
+        _particleVelocityBuffer?.Release();
+        _granuleDataBuffer?.Release();
+        _commandBuffer?.Release();
     }
 
     private void Start()
@@ -111,13 +133,33 @@ public class SandSimulation : MonoBehaviour
         Setup();
     }
 
+    private void FixedUpdate()
+    {
+        computeShader.SetBuffer(_kernel, _particlePositionBufferId, _particlePositionBuffer);
+        computeShader.SetBuffer(_kernel, _particleVelocityBufferId, _particleVelocityBuffer);
+        computeShader.SetBuffer(_kernel, _granuleDataBufferId, _granuleDataBuffer);
+        
+        computeShader.SetInt(_granuleCountId, granuleCount);
+        computeShader.SetFloat(_particleMassId, particleMass);
+        computeShader.SetFloat(_deltaTimeId, Time.fixedDeltaTime);
+        computeShader.SetFloat(_particleRadiusId, sandRadius);  
+        computeShader.Dispatch(_kernel, Math.Max(1, particleCount / 64), 1, 1);
+    }
+
     private void Update()
     {
-        material.SetBuffer("_ParticlePositionBuffer", _ParticlePositionBuffer);//只有_ParticlePositionBuffer需要传递给材质
-        computeShader.SetBuffer(_kernel, "_ParticlePositionBuffer", _ParticlePositionBuffer);
-        computeShader.SetBuffer(_kernel, "_ParticleVelocityBuffer", _ParticleVelocityBuffer);
-        computeShader.SetBuffer(_kernel, "_GranuleDataBuffer", _GranuleDataBuffer);
-        computeShader.Dispatch(_kernel, particleCount / 64, 1, 1);
-        Graphics.RenderMeshIndirect(_RenderParams, mesh, _CommandBuffer, 1);
+        material.SetBuffer("_ParticlePositionBuffer", _particlePositionBuffer);//只有_ParticlePositionBuffer需要传递给材质
+        Graphics.RenderMeshIndirect(_renderParams, mesh, _commandBuffer, 1);
+        //DebugParticleBuffer();
+    }
+
+    void DebugParticleBuffer()
+    {
+        Vector3[] particlePositions = new Vector3[particleCount];
+        _particlePositionBuffer.GetData(particlePositions);
+        for(int i = 0; i < particleCount; i++)
+        {
+            Debug.Log(particlePositions[i]);
+        }
     }
 }

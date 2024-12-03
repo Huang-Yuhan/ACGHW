@@ -12,10 +12,25 @@ struct GranuleDataType
 RWStructuredBuffer<float3> _ParticlePositionBuffer;
 RWStructuredBuffer<float3> _ParticleVelocityBuffer;
 RWStructuredBuffer<GranuleDataType> _GranuleBuffer;
-float _Time;
+float _DeltaTime;
+int _GranuleCount;
+float _ParticleMass;
+float _ParticleRadius;
 
+static float3 tetrachoron[4] = {                        //为什么不能用const?
+    float3(1,0,-1/sqrt(2)),
+    float3(-1,0,-1/sqrt(2)),
+    float3(0,1,1/sqrt(2)),
+    float3(0,-1,1/sqrt(2))
+};
 void CSMain();
-void TestSimulation(uint3 id : SV_DispatchThreadID);
+void TestSimulation(uint3 granuleIndex : SV_DispatchThreadID);
+void UpdateParticle(uint particleIndex);
+void UpdateGranule(uint granuleIndex);
+float3x3 QuaternionToMatrix(float4 quaternion);
+float3 ParticleContactForceSum(uint particleIndex);         //计算particle的接触力
+
+
 inline uint GetGranuleIndex(uint particleIndex)
 {
     return particleIndex/4;
@@ -23,6 +38,11 @@ inline uint GetGranuleIndex(uint particleIndex)
 inline uint GetFirstParticleIndex(uint granuleIndex)
 {
     return granuleIndex*4;
+}
+
+float3 getParticleOffset(uint particleIndex)
+{
+    return tetrachoron[particleIndex%4]*_ParticleRadius/2;
 }
 
 [numthreads(64,1,1)]
@@ -34,10 +54,89 @@ void CSMain (uint3 granuleIndex : SV_DispatchThreadID)
 void TestSimulation(uint3 granuleIndex : SV_DispatchThreadID)
 {
 
-    uint firstParticleIndex = GetFirstParticleIndex(granuleIndex.x);
+    UpdateGranule(granuleIndex.x);
 
-    _ParticlePositionBuffer[firstParticleIndex] = _ParticlePositionBuffer[firstParticleIndex] + _ParticleVelocityBuffer[firstParticleIndex] * _Time;
-    _ParticlePositionBuffer[firstParticleIndex+1] = _ParticlePositionBuffer[firstParticleIndex+1] + _ParticleVelocityBuffer[firstParticleIndex+1] * _Time;
-    _ParticlePositionBuffer[firstParticleIndex+2] = _ParticlePositionBuffer[firstParticleIndex+2] + _ParticleVelocityBuffer[firstParticleIndex+2] * _Time;
-    _ParticlePositionBuffer[firstParticleIndex+3] = _ParticlePositionBuffer[firstParticleIndex+3] + _ParticleVelocityBuffer[firstParticleIndex+3] * _Time;
 }
+
+void UpdateGranule(uint granuleIndex)
+{
+    uint firstParticleIndex = GetFirstParticleIndex(granuleIndex);
+
+    float3 sumForce = float3(0,-9.8,0);
+    sumForce+= ParticleContactForceSum(firstParticleIndex);
+    sumForce+= ParticleContactForceSum(firstParticleIndex+1);
+    sumForce+= ParticleContactForceSum(firstParticleIndex+2);
+    sumForce+= ParticleContactForceSum(firstParticleIndex+3);
+
+    float3 granuleAcceleration = sumForce/_ParticleMass;
+    
+    GranuleDataType granule = _GranuleBuffer[granuleIndex];
+    float3 granulePosition = granule.position;
+    float3 granuleVelocity = granule.velocity;
+    float3 granuleAngularVelocity = granule.angularVelocity;
+    float4 granuleQuaternion = granule.quaternion;
+
+    granuleVelocity = granuleVelocity + granuleAcceleration*_DeltaTime;
+    granulePosition = granulePosition + granuleVelocity*_DeltaTime;
+
+    if(granulePosition.y<0&&granuleVelocity.y<0)
+    {
+        granuleVelocity.y = -granuleVelocity.y;
+        granulePosition.y = -granulePosition.y;
+    }
+    
+    _GranuleBuffer[granuleIndex].position = granulePosition;
+    _GranuleBuffer[granuleIndex].velocity = granuleVelocity;
+    
+    
+    UpdateParticle(firstParticleIndex);
+    UpdateParticle(firstParticleIndex+1);
+    UpdateParticle(firstParticleIndex+2);
+    UpdateParticle(firstParticleIndex+3);
+}
+
+void UpdateParticle(uint particleIndex)
+{
+    //根据granule的位置和速度，计算particle的位置和速度
+    uint granuleIndex = GetGranuleIndex(particleIndex);
+    GranuleDataType granule = _GranuleBuffer[granuleIndex];
+    float3 granulePosition = granule.position;
+    float3 granuleVelocity = granule.velocity;
+    float3 granuleAngularVelocity = granule.angularVelocity;
+    float4 granuleQuaternion = granule.quaternion;
+    float3x3 granuleRotationMatrix = QuaternionToMatrix(granuleQuaternion);
+    float3 particlePosition = granulePosition + mul(granuleRotationMatrix,getParticleOffset(particleIndex));
+    float3 particleVelocity = granuleVelocity + cross(granuleAngularVelocity,getParticleOffset(particleIndex));
+
+    _ParticlePositionBuffer[particleIndex] = particlePosition;
+    _ParticleVelocityBuffer[particleIndex] = particleVelocity;
+}
+
+float3x3 QuaternionToMatrix(float4 quaternion)
+{
+    float3x3 result;
+    float x = quaternion.x;
+    float y = quaternion.y;
+    float z = quaternion.z;
+    float w = quaternion.w;
+    result[0][0] = 1 - 2*y*y - 2*z*z;
+    result[0][1] = 2*x*y - 2*z*w;
+    result[0][2] = 2*x*z + 2*y*w;
+    result[1][0] = 2*x*y + 2*z*w;
+    result[1][1] = 1 - 2*x*x - 2*z*z;
+    result[1][2] = 2*y*z - 2*x*w;
+    result[2][0] = 2*x*z - 2*y*w;
+    result[2][1] = 2*y*z + 2*x*w;
+    result[2][2] = 1 - 2*x*x - 2*y*y;
+    return result;
+}
+
+//目前只考虑重力
+float3 ParticleContactForceSum(uint particleIndex)
+{
+    return float3(0,0,0);
+}
+ 
+
+
+
