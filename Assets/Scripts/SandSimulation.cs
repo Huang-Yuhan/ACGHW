@@ -23,6 +23,14 @@ public class SandSimulation : MonoBehaviour
     public float sandRadius = 0.1f;                         //同样也是粒子的半径
     [Tooltip("粒子的质量")] 
     public float particleMass = 1.0f;
+    [Tooltip("沙子弹性恢复系数")]
+    public float elasticityRestoringCoefficient = 0.1f;
+    [Tooltip("接触时间")] 
+    public float contactTime = 0.02f;
+    [Tooltip("摩擦系数")]
+    public float frictionCoefficient = 0.5f;
+    [Tooltip("速度阻尼系数")]
+    public float velocityDampingCoefficient = 0.5f;
     
     /// <summary>
     /// https://zh.wikipedia.org/wiki/%E6%AD%A3%E5%9B%9B%E9%9D%A2%E9%AB%94
@@ -42,6 +50,8 @@ public class SandSimulation : MonoBehaviour
     private RenderParams _renderParams;
     private GraphicsBuffer _commandBuffer;
     private GraphicsBuffer.IndirectDrawIndexedArgs[] _commandData;
+    private float _viscousDampingCoefficient;
+    private float _elasticityRestoringCoefficient;
     
     //ids
     private int _particlePositionBufferId;
@@ -51,6 +61,10 @@ public class SandSimulation : MonoBehaviour
     private int _particleMassId;
     private int _deltaTimeId;
     private int _particleRadiusId;
+    private int _viscousDampingCoefficientId;
+    private int _elasticityRestoringCoefficientId;
+    private int _frictionCoefficientId;
+    private int _velocityDampingCoefficientId;
 
     struct GranuleDataType
     {
@@ -84,6 +98,10 @@ public class SandSimulation : MonoBehaviour
         _particleMassId = Shader.PropertyToID("_ParticleMass");
         _deltaTimeId = Shader.PropertyToID("_DeltaTime");
         _particleRadiusId = Shader.PropertyToID("_ParticleRadius");
+        _viscousDampingCoefficientId = Shader.PropertyToID("_ViscousDampingCoefficient");
+        _elasticityRestoringCoefficientId = Shader.PropertyToID("_ElasticityRestoringCoefficient");
+        _frictionCoefficientId = Shader.PropertyToID("_FrictionCoefficient");
+        _velocityDampingCoefficientId = Shader.PropertyToID("_VelocityDampingCoefficient");
     }
     
     void SetupSimulation()
@@ -112,6 +130,15 @@ public class SandSimulation : MonoBehaviour
         _particlePositionBuffer.SetData(particlePositions);
         _particleVelocityBuffer.SetData(particleVelocities);
         _granuleDataBuffer.SetData(granuleData);
+
+
+        var m_eff = particleMass / 2;
+        _viscousDampingCoefficient = 2 * m_eff * (-Mathf.Log(elasticityRestoringCoefficient)) / contactTime;
+        _elasticityRestoringCoefficient = m_eff/ (contactTime * contactTime)* Mathf.Log(elasticityRestoringCoefficient*elasticityRestoringCoefficient+Mathf.PI* Mathf.PI);
+
+        Debug.Log("viscousDampingCoefficient: " + _viscousDampingCoefficient);
+        Debug.Log("elasticityRestoringCoefficient: " + _elasticityRestoringCoefficient);
+
     }
     
     void Setup()
@@ -143,6 +170,10 @@ public class SandSimulation : MonoBehaviour
         computeShader.SetFloat(_particleMassId, particleMass);
         computeShader.SetFloat(_deltaTimeId, Time.fixedDeltaTime);
         computeShader.SetFloat(_particleRadiusId, sandRadius);  
+        computeShader.SetFloat(_viscousDampingCoefficientId, _viscousDampingCoefficient);
+        computeShader.SetFloat(_elasticityRestoringCoefficientId, _elasticityRestoringCoefficient);
+        computeShader.SetFloat(_frictionCoefficientId, frictionCoefficient);
+        computeShader.SetFloat(_velocityDampingCoefficientId, velocityDampingCoefficient);
         computeShader.Dispatch(_kernel, Math.Max(1, particleCount / 64), 1, 1);
     }
 
