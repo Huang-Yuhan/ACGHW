@@ -99,10 +99,14 @@ void UpdateGranule(uint granuleIndex)
     uint firstParticleIndex = GetFirstParticleIndex(granuleIndex);
 
     float3 sumForce = float3(0,0,0);
-    sumForce+= ParticleForceSum(firstParticleIndex);
-    sumForce+= ParticleForceSum(firstParticleIndex+1);
-    sumForce+= ParticleForceSum(firstParticleIndex+2);
-    sumForce+= ParticleForceSum(firstParticleIndex+3);
+    float3x3 sumTorque = float3x3(0,0,0,0,0,0,0,0,0);
+
+    float3 force1 = ParticleForceSum(firstParticleIndex);
+    float3 force2 = ParticleForceSum(firstParticleIndex+1);
+    float3 force3 = ParticleForceSum(firstParticleIndex+2);
+    float3 force4 = ParticleForceSum(firstParticleIndex+3);
+
+    sumForce+=force1+force2+force3+force4;
 
     float3 granuleAcceleration = sumForce/(_ParticleMass*4);
     
