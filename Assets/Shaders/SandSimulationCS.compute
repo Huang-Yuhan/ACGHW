@@ -137,7 +137,7 @@ void UpdateParticle(uint particleIndex)
 {
     //根据granule的位置和速度，计算particle的位置和速度
     uint granuleIndex = GetGranuleIndex(particleIndex);
-    GranuleDataType granule = _GranuleBuffer[granuleIndex];                         //这里需要用到计算后的数据，所以不能用GetGranule函数
+    GranuleDataType granule = _GranuleBuffer[granuleIndex+(1-_bufferIndexBegin)*_GranuleCount];                         //这里需要用到计算后的数据，所以不能用GetGranule函数
     float3 granulePosition = granule.position;
     float3 granuleVelocity = granule.velocity;
     float3 granuleAngularVelocity = granule.angularVelocity;
