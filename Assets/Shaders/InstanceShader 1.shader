@@ -37,6 +37,7 @@ Shader "Custom/InstanceShader"
             
             //ComputeShader中的粒子位置
             StructuredBuffer<float3> _ParticlePositionBuffer;
+            int _BufferBeginIndex;
 
             //渲染相关参数
             fixed4 _Diffuse;
@@ -50,7 +51,7 @@ Shader "Custom/InstanceShader"
                 v2f o;
                 uint cmdID = GetCommandID(0);
                 uint instanceID = GetIndirectInstanceID(svInstanceID);
-                float3 center = _ParticlePositionBuffer[instanceID];
+                float3 center = _ParticlePositionBuffer[instanceID + _BufferBeginIndex];
                 float4 vertexWolrdPosition = float4(v.vertex.xyz * _Scale + center, 1);
                 o.pos = mul(UNITY_MATRIX_VP, vertexWolrdPosition);
                 o.worldNormal = v.normal;

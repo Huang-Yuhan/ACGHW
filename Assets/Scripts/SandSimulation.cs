@@ -52,12 +52,14 @@ public class SandSimulation : MonoBehaviour
     private GraphicsBuffer.IndirectDrawIndexedArgs[] _commandData;
     private float _viscousDampingCoefficient;
     private float _elasticityRestoringCoefficient;
+    private int _bufferIndexBegin;                     //取值为0或1，用于交替读写两个缓冲区
     
     //ids
     private int _particlePositionBufferId;
     private int _particleVelocityBufferId;
     private int _granuleDataBufferId;
     private int _granuleCountId;
+    private int _particleCountId;
     private int _particleMassId;
     private int _deltaTimeId;
     private int _particleRadiusId;
@@ -65,6 +67,7 @@ public class SandSimulation : MonoBehaviour
     private int _elasticityRestoringCoefficientId;
     private int _frictionCoefficientId;
     private int _velocityDampingCoefficientId;
+    private int _bufferIndexBeginId;
 
     struct GranuleDataType
     {
@@ -102,14 +105,17 @@ public class SandSimulation : MonoBehaviour
         _elasticityRestoringCoefficientId = Shader.PropertyToID("_ElasticityRestoringCoefficient");
         _frictionCoefficientId = Shader.PropertyToID("_FrictionCoefficient");
         _velocityDampingCoefficientId = Shader.PropertyToID("_VelocityDampingCoefficient");
+        _particleCountId = Shader.PropertyToID("_ParticleCount");
+        _bufferIndexBeginId = Shader.PropertyToID("_bufferIndexBegin");
     }
     
     void SetupSimulation()
     {
         _kernel = computeShader.FindKernel("CSMain");
-        Vector3[] particlePositions = new Vector3[particleCount];
-        Vector3[] particleVelocities = new Vector3[particleCount];
-        GranuleDataType[] granuleData = new GranuleDataType[granuleCount];
+        Vector3[] particlePositions = new Vector3[particleCount*2];
+        Vector3[] particleVelocities = new Vector3[particleCount*2];
+        GranuleDataType[] granuleData = new GranuleDataType[granuleCount*2];
+        _bufferIndexBegin = 0;
         for(int i = 0; i < granuleCount; i++)
         {
             granuleData[i].Position = new Vector3(0,Random.Range(0.0f,2.0f),0);
@@ -123,9 +129,9 @@ public class SandSimulation : MonoBehaviour
             }
         }
         
-        _particlePositionBuffer = new ComputeBuffer(particleCount, sizeof(float) * 3);
-        _particleVelocityBuffer = new ComputeBuffer(particleCount, sizeof(float) * 3);
-        _granuleDataBuffer = new ComputeBuffer(granuleCount, GranuleDataType.GetSize());
+        _particlePositionBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
+        _particleVelocityBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
+        _granuleDataBuffer = new ComputeBuffer(granuleCount*2, GranuleDataType.GetSize());
         
         _particlePositionBuffer.SetData(particlePositions);
         _particleVelocityBuffer.SetData(particleVelocities);
@@ -174,12 +180,17 @@ public class SandSimulation : MonoBehaviour
         computeShader.SetFloat(_elasticityRestoringCoefficientId, _elasticityRestoringCoefficient);
         computeShader.SetFloat(_frictionCoefficientId, frictionCoefficient);
         computeShader.SetFloat(_velocityDampingCoefficientId, velocityDampingCoefficient);
+        computeShader.SetInt(_particleCountId, particleCount);
+        computeShader.SetInt(_bufferIndexBeginId, _bufferIndexBegin);
         computeShader.Dispatch(_kernel, Math.Max(1, particleCount / 64), 1, 1);
+        
+        _bufferIndexBegin = 1 - _bufferIndexBegin;
     }
 
     private void Update()
     {
         material.SetBuffer("_ParticlePositionBuffer", _particlePositionBuffer);//只有_ParticlePositionBuffer需要传递给材质
+        material.SetInt("_BufferBeginIndex", _bufferIndexBegin*particleCount);
         Graphics.RenderMeshIndirect(_renderParams, mesh, _commandBuffer, 1);
         //DebugParticleBuffer();
     }

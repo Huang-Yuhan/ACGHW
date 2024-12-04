@@ -11,15 +11,43 @@ struct GranuleDataType
 
 RWStructuredBuffer<float3> _ParticlePositionBuffer;
 RWStructuredBuffer<float3> _ParticleVelocityBuffer;
-RWStructuredBuffer<GranuleDataType> _GranuleBuffer;
+RWStructuredBuffer<GranuleDataType> _GranuleBuffer;             //所有的buffer都实际扩大了一倍，分别用于存储当前时刻和下一时刻的数据
 float _DeltaTime;
 int _GranuleCount;
+int _ParticleCount;
 float _ParticleMass;
 float _ParticleRadius;
 float _ViscousDampingCoefficient;
 float _ElasticityRestoringCoefficient;
 float _FrictionCoefficient;
 float _VelocityDampingCoefficient;
+
+uint _bufferIndexBegin;                             //取值为0或1，表示当前时刻的数据存储在buffer的前半部分还是后半部分
+
+float3 GetParticlePosition(uint particleIndex)
+{
+    return _ParticlePositionBuffer[particleIndex+_bufferIndexBegin*_ParticleCount];
+}
+float3 GetParticleVelocity(uint particleIndex)
+{
+    return _ParticleVelocityBuffer[particleIndex+_bufferIndexBegin*_ParticleCount];
+}
+GranuleDataType GetGranule(uint granuleIndex)
+{
+    return _GranuleBuffer[granuleIndex+_bufferIndexBegin*_GranuleCount];
+}
+void SetParticlePosition(uint particleIndex,float3 position)
+{
+    _ParticlePositionBuffer[particleIndex+(1-_bufferIndexBegin)*_ParticleCount] = position;
+}
+void SetParticleVelocity(uint particleIndex,float3 velocity)
+{
+    _ParticleVelocityBuffer[particleIndex+(1-_bufferIndexBegin)*_ParticleCount] = velocity;
+}
+void SetGranule(uint granuleIndex,GranuleDataType granule)
+{
+    _GranuleBuffer[granuleIndex+(1-_bufferIndexBegin)*_GranuleCount] = granule;
+}
 
 
 static const float3 tetrahedron[4] = {                        
@@ -78,7 +106,7 @@ void UpdateGranule(uint granuleIndex)
 
     float3 granuleAcceleration = sumForce/_ParticleMass;
     
-    GranuleDataType granule = _GranuleBuffer[granuleIndex];
+    GranuleDataType granule = GetGranule(granuleIndex);
     float3 granulePosition = granule.position;
     float3 granuleVelocity = granule.velocity;
     float3 granuleAngularVelocity = granule.angularVelocity;
@@ -93,9 +121,11 @@ void UpdateGranule(uint granuleIndex)
         granulePosition.y = -granulePosition.y;
     }
     
-    _GranuleBuffer[granuleIndex].position = granulePosition;
-    _GranuleBuffer[granuleIndex].velocity = granuleVelocity;
-    
+    /*_GranuleBuffer[granuleIndex].position = granulePosition;
+    _GranuleBuffer[granuleIndex].velocity = granuleVelocity;*/
+    granule.position = granulePosition;
+    granule.velocity = granuleVelocity;
+    SetGranule(granuleIndex,granule);
     
     UpdateParticle(firstParticleIndex);
     UpdateParticle(firstParticleIndex+1);
@@ -107,7 +137,7 @@ void UpdateParticle(uint particleIndex)
 {
     //根据granule的位置和速度，计算particle的位置和速度
     uint granuleIndex = GetGranuleIndex(particleIndex);
-    GranuleDataType granule = _GranuleBuffer[granuleIndex];
+    GranuleDataType granule = _GranuleBuffer[granuleIndex];                         //这里需要用到计算后的数据，所以不能用GetGranule函数
     float3 granulePosition = granule.position;
     float3 granuleVelocity = granule.velocity;
     float3 granuleAngularVelocity = granule.angularVelocity;
@@ -116,8 +146,10 @@ void UpdateParticle(uint particleIndex)
     float3 particlePosition = granulePosition + mul(granuleRotationMatrix,getParticleOffset(particleIndex));
     float3 particleVelocity = granuleVelocity + cross(granuleAngularVelocity,getParticleOffset(particleIndex));
 
-    _ParticlePositionBuffer[particleIndex] = particlePosition;
-    _ParticleVelocityBuffer[particleIndex] = particleVelocity;
+    /*_ParticlePositionBuffer[particleIndex] = particlePosition;
+    _ParticleVelocityBuffer[particleIndex] = particleVelocity;*/
+    SetParticlePosition(particleIndex,particlePosition);
+    SetParticleVelocity(particleIndex,particleVelocity);
 }
 
 float3x3 QuaternionToMatrix(float4 quaternion)
@@ -152,10 +184,10 @@ float3 ParticleContactForceSum(uint particleIndex)
             continue;
         }
         float3 contactForce = float3(0,0,0);
-        contactForce+=CalculateContactForce(particleIndex,firstParticleIndex);
+        /*contactForce+=CalculateContactForce(particleIndex,firstParticleIndex);
         contactForce+=CalculateContactForce(particleIndex,firstParticleIndex+1);
         contactForce+=CalculateContactForce(particleIndex,firstParticleIndex+2);
-        contactForce+=CalculateContactForce(particleIndex,firstParticleIndex+3);
+        contactForce+=CalculateContactForce(particleIndex,firstParticleIndex+3);*/
         sumForce+=contactForce;
     }
     
@@ -164,17 +196,20 @@ float3 ParticleContactForceSum(uint particleIndex)
 
 float3 CalculateContactForce(uint particleIndex1,uint particleIndex2)    //计算两个particle之间的接触力
 {
-    float overlap_degree = _ParticleRadius*2-length(_ParticlePositionBuffer[particleIndex1]-_ParticlePositionBuffer[particleIndex2]);
+    //float overlap_degree = _ParticleRadius*2-length(_ParticlePositionBuffer[particleIndex1]-_ParticlePositionBuffer[particleIndex2]);
+    float overlap_degree = _ParticleRadius*2-length(GetParticlePosition(particleIndex1)-GetParticlePosition(particleIndex2));
     if(overlap_degree<=0)
     {
         return float3(0,0,0);
     }
-    float3 contactNormal = normalize(_ParticlePositionBuffer[particleIndex1]-_ParticlePositionBuffer[particleIndex2]);
-    float3 contactPointPosition = (_ParticlePositionBuffer[particleIndex1]+_ParticlePositionBuffer[particleIndex2])/2;      //由于半径相同，所以我们认为接触点在两个粒子的连线中点
+    //float3 contactNormal = normalize(_ParticlePositionBuffer[particleIndex1]-_ParticlePositionBuffer[particleIndex2]);
+    float3 contactNormal = normalize(GetParticlePosition(particleIndex1)-GetParticlePosition(particleIndex2));
+    //float3 contactPointPosition = (_ParticlePositionBuffer[particleIndex1]+_ParticlePositionBuffer[particleIndex2])/2;      //由于半径相同，所以我们认为接触点在两个粒子的连线中点
+    float3 contactPointPosition = (GetParticlePosition(particleIndex1)+GetParticlePosition(particleIndex2))/2;
     uint granuleIndex1 = GetGranuleIndex(particleIndex1);
-    GranuleDataType granule1 = _GranuleBuffer[granuleIndex1];
+    GranuleDataType granule1 = GetGranule(granuleIndex1);
     uint granuleIndex2 = GetGranuleIndex(particleIndex2);
-    GranuleDataType granule2 = _GranuleBuffer[granuleIndex2];
+    GranuleDataType granule2 = GetGranule(granuleIndex2);
 
     float3 contactPointParticle1Velocity = granule1.velocity + cross(granule1.angularVelocity,contactPointPosition-granule1.position);
     float3 contactPointParticle2Velocity = granule2.velocity + cross(granule2.angularVelocity,contactPointPosition-granule2.position);
