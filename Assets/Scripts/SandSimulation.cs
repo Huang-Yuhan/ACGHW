@@ -89,7 +89,7 @@ public class SandSimulation : MonoBehaviour
         _commandData[0].instanceCount = (uint)particleCount;
         _commandBuffer.SetData(_commandData);
         //设置Scale
-        material.SetFloat("_Scale", sandRadius);
+        material.SetFloat("_Radius", sandRadius);
         _renderParams = new RenderParams(material);
         _renderParams.worldBounds = new Bounds(Vector3.zero, 100 * Vector3.one);//设定边界
         
@@ -129,6 +129,10 @@ public class SandSimulation : MonoBehaviour
             }
         }
         
+        //TEST
+        granuleData[0].Position = new Vector3(0, 0.5f, 0);
+        granuleData[1].Position = new Vector3(0, 1.5f, 0);
+        
         _particlePositionBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
         _particleVelocityBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
         _granuleDataBuffer = new ComputeBuffer(granuleCount*2, GranuleDataType.GetSize());
@@ -140,8 +144,10 @@ public class SandSimulation : MonoBehaviour
 
         var m_eff = particleMass / 2;
         _viscousDampingCoefficient = 2 * m_eff * (-Mathf.Log(elasticityRestoringCoefficient)) / contactTime;
-        _elasticityRestoringCoefficient = m_eff/ (contactTime * contactTime)* Mathf.Log(elasticityRestoringCoefficient*elasticityRestoringCoefficient+Mathf.PI* Mathf.PI);
+        _elasticityRestoringCoefficient = m_eff/ (contactTime * contactTime)* (Mathf.Log(elasticityRestoringCoefficient)*Mathf.Log(elasticityRestoringCoefficient)+Mathf.PI* Mathf.PI);
 
+        /*_viscousDampingCoefficient = (uint)1e6;
+        _elasticityRestoringCoefficient = 500;*/
         Debug.Log("viscousDampingCoefficient: " + _viscousDampingCoefficient);
         Debug.Log("elasticityRestoringCoefficient: " + _elasticityRestoringCoefficient);
 
@@ -192,16 +198,19 @@ public class SandSimulation : MonoBehaviour
         material.SetBuffer("_ParticlePositionBuffer", _particlePositionBuffer);//只有_ParticlePositionBuffer需要传递给材质
         material.SetInt("_BufferBeginIndex", _bufferIndexBegin*particleCount);
         Graphics.RenderMeshIndirect(_renderParams, mesh, _commandBuffer, 1);
-        //DebugParticleBuffer();
+        DebugParticleBuffer();
     }
 
     void DebugParticleBuffer()
     {
         Vector3[] particlePositions = new Vector3[particleCount];
+        Vector3[] particleVelocities = new Vector3[particleCount];
         _particlePositionBuffer.GetData(particlePositions);
+        _particleVelocityBuffer.GetData(particleVelocities);
         for(int i = 0; i < particleCount; i++)
         {
-            Debug.Log(particlePositions[i]);
+            Debug.LogFormat("particlePositions[{0}]: {1}, particleVelocities[{0}]: {2}", i, particlePositions[i], particleVelocities[i]);
         }
+        
     }
 }
