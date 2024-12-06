@@ -67,8 +67,8 @@ public class ParticelRegisterManager : MonoBehaviour
 
     private void Update()
     {
-        material.SetBuffer("_ParticlePositionBuffer",_particleBuffer);
+        /*material.SetBuffer("_ParticlePositionBuffer",_particleBuffer);
         material.SetInt("_BufferBeginIndex",0);
-        Graphics.DrawMeshInstancedIndirect(mesh, 0, material, _renderParams.worldBounds, _commandBuffer);
+        Graphics.DrawMeshInstancedIndirect(mesh, 0, material, _renderParams.worldBounds, _commandBuffer);*/
     }
 }

@@ -199,19 +199,17 @@ void UpdateParticle(uint particleIndex)
 float3x3 QuaternionToMatrix(float4 quaternion)
 {
     float3x3 result;
-    float x = quaternion.x;
-    float y = quaternion.y;
-    float z = quaternion.z;
-    float w = quaternion.w;
-    result[0][0] = 1 - 2*y*y - 2*z*z;
-    result[0][1] = 2*x*y - 2*z*w;
-    result[0][2] = 2*x*z + 2*y*w;
-    result[1][0] = 2*x*y + 2*z*w;
-    result[1][1] = 1 - 2*x*x - 2*z*z;
-    result[1][2] = 2*y*z - 2*x*w;
-    result[2][0] = 2*x*z - 2*y*w;
-    result[2][1] = 2*y*z + 2*x*w;
-    result[2][2] = 1 - 2*x*x - 2*y*y;
+    float s= quaternion.x;
+    float3 v = quaternion.yzw;
+    result[0][0] = 1-2*v.y*v.y-2*v.z*v.z;
+    result[0][1] = 2*v.x*v.y-2*s*v.z;
+    result[0][2] = 2*v.x*v.z+2*s*v.y;
+    result[1][0] = 2*v.x*v.y+2*s*v.z;
+    result[1][1] = 1-2*v.x*v.x-2*v.z*v.z;
+    result[1][2] = 2*v.y*v.z-2*s*v.x;
+    result[2][0] = 2*v.x*v.z-2*s*v.y;
+    result[2][1] = 2*v.y*v.z+2*s*v.x;
+    result[2][2] = 1-2*v.x*v.x-2*v.y*v.y;
     return result;
 }
 
@@ -267,7 +265,6 @@ float3 CalculateContactForceWithRigidBodyParticle(uint particleIndex,uint rigidB
     float overlap_velocity = dot(relativeVelocity,contactNormal);
     float3 contactTangentVelocity = relativeVelocity - overlap_velocity*contactNormal;
     float f_normal = -_ViscousDampingCoefficient*sqrt(overlap_degree)*overlap_velocity-_ElasticityRestoringCoefficient*pow(overlap_degree,1.5);
-    //return f_normal*contactNormal;
     float f_tangent = -min(_FrictionCoefficient*f_normal,_VelocityDampingCoefficient*length(contactTangentVelocity));
     return f_normal*contactNormal+f_tangent*normalize(contactTangentVelocity);
 }
@@ -296,7 +293,6 @@ float3 CalculateContactForce(uint particleIndex1,uint particleIndex2)    //è®¡ç®
     float overlap_velocity = dot(relativeVelocity,contactNormal);
     float3 contactTangentVelocity = relativeVelocity - overlap_velocity*contactNormal;
     float f_normal = -_ViscousDampingCoefficient*sqrt(overlap_degree)*overlap_velocity-_ElasticityRestoringCoefficient*pow(overlap_degree,1.5);
-    return f_normal*contactNormal;
     float f_tangent = -min(_FrictionCoefficient*f_normal,_VelocityDampingCoefficient*length(contactTangentVelocity));
     return f_normal*contactNormal+f_tangent*normalize(contactTangentVelocity);
 }

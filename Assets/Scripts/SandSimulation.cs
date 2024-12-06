@@ -191,7 +191,7 @@ public class SandSimulation : MonoBehaviour
         
         computeShader.SetInt(_granuleCountId, granuleCount);
         computeShader.SetFloat(_particleMassId, particleMass);
-        computeShader.SetFloat(_deltaTimeId, Time.fixedDeltaTime);
+        computeShader.SetFloat(_deltaTimeId, Time.fixedDeltaTime/2);
         computeShader.SetFloat(_particleRadiusId, sandRadius);  
         computeShader.SetFloat(_viscousDampingCoefficientId, _viscousDampingCoefficient);
         computeShader.SetFloat(_elasticityRestoringCoefficientId, _elasticityRestoringCoefficient);
@@ -237,7 +237,7 @@ public class SandSimulation : MonoBehaviour
         Mesh sphereMesh = mesh;
         Vector3[] vertices = sphereMesh.vertices;
         Matrix4x4 I_ref = Matrix4x4.zero;
-        float vertexMass = particleMass/vertices.Length;
+        float vertexMass = particleMass;
         for (int i = 0; i < tetrahedronVertices.Length; i++)
         {
             I_ref[0, 0] += vertexMass * tetrahedronVertices[i].sqrMagnitude;

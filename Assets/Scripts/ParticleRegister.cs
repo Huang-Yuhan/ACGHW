@@ -20,12 +20,15 @@ public class ParticleRegister : MonoBehaviour
         //TEST，这里为了方便测试，在项目中使用的是Plane
         const float particleRadius = 0.1f;
         //从[-3,3]*[-3,3]生成粒子
-        for (float x = -3; x < 3; x += particleRadius*2)
+        float lower_bound = -5;
+        float upper_bound = 5;
+        
+        for (float x = lower_bound; x < upper_bound; x += particleRadius*2)
         {
-            for (float z = -3; z < 3; z += particleRadius*2)
+            for (float z = lower_bound; z < upper_bound; z += particleRadius*2)
             {
                 ParticelRegisterManager.RigidBodyParticleData data = new ParticelRegisterManager.RigidBodyParticleData();
-                data.position = new Vector3(x, 0, z);
+                data.position = transform.TransformPoint(new Vector3(x, 0, z));
                 rigidBodyParticleDatas.Add(data);
             }
         }
