@@ -21,6 +21,7 @@ float _ViscousDampingCoefficient;
 float _ElasticityRestoringCoefficient;
 float _FrictionCoefficient;
 float _VelocityDampingCoefficient;
+float4x4 _GranuleInertiaReferenceTensor;
 
 uint _bufferIndexBegin;                             //取值为0或1，表示当前时刻的数据存储在buffer的前半部分还是后半部分
 
@@ -49,6 +50,19 @@ void SetGranule(uint granuleIndex,GranuleDataType granule)
     _GranuleBuffer[granuleIndex+(1-_bufferIndexBegin)*_GranuleCount] = granule;
 }
 
+float4 quaternionMul(float4 q1,float4 q2)
+{
+    float4 result;
+    float s1 = q1.x;
+    float s2 = q2.x;
+    float3 v1 = q1.yzw;
+    float3 v2 = q2.yzw;
+
+    result.x = s1*s2-dot(v1,v2);
+    result.yzw = s1*v2+s2*v1+cross(v1,v2);
+    
+    return result;
+}
 
 static const float3 tetrahedron[4] = {                        
     float3(1,0,-1/sqrt(2)),
@@ -56,7 +70,6 @@ static const float3 tetrahedron[4] = {
     float3(0,1,1/sqrt(2)),
     float3(0,-1,1/sqrt(2))
 };
-static const 
 
 void CSMain();
 void TestSimulation(uint3 granuleIndex : SV_DispatchThreadID);
@@ -91,7 +104,6 @@ void TestSimulation(uint3 granuleIndex : SV_DispatchThreadID)
 {
 
     UpdateGranule(granuleIndex.x);
-
 }
 
 void UpdateGranule(uint granuleIndex)
@@ -99,7 +111,7 @@ void UpdateGranule(uint granuleIndex)
     uint firstParticleIndex = GetFirstParticleIndex(granuleIndex);
 
     float3 sumForce = float3(0,0,0);
-    float3x3 sumTorque = float3x3(0,0,0,0,0,0,0,0,0);
+    float3 sumTorque = float3(0,0,0);
 
     float3 force1 = ParticleForceSum(firstParticleIndex);
     float3 force2 = ParticleForceSum(firstParticleIndex+1);
@@ -116,6 +128,27 @@ void UpdateGranule(uint granuleIndex)
     float3 granuleAngularVelocity = granule.angularVelocity;
     float4 granuleQuaternion = granule.quaternion;
 
+    float3x3 rotationMatrix = QuaternionToMatrix(granuleQuaternion);
+    float3 r1 = mul(rotationMatrix,getParticleOffset(firstParticleIndex));
+    float3 r2 = mul(rotationMatrix,getParticleOffset(firstParticleIndex+1));
+    float3 r3 = mul(rotationMatrix,getParticleOffset(firstParticleIndex+2));
+    float3 r4 = mul(rotationMatrix,getParticleOffset(firstParticleIndex+3));
+
+    float3 torque1 = cross(r1,force1);
+    float3 torque2 = cross(r2,force2);
+    float3 torque3 = cross(r3,force3);
+    float3 torque4 = cross(r4,force4);
+
+    sumTorque+=torque1+torque2+torque3+torque4;
+
+    float3x3 InertiaReferenceTensor3x3 = _GranuleInertiaReferenceTensor;
+    float3x3 InvInertiaReferenceTensor3x3 = float3x3(1/InertiaReferenceTensor3x3[0][0],0,0,0,1/InertiaReferenceTensor3x3[1][1],0,0,0,1/InertiaReferenceTensor3x3[2][2]);
+    
+    //float3x3 InertiaTensor = mul(rotationMatrix,mul(InertiaReferenceTensor3x3,transpose(rotationMatrix)));
+    //float3x3 InvInertiaTensor = inverse(InertiaTensor);
+    //该物体的惯性张量是一个对角矩阵，所以其逆矩阵也是一个对角矩阵，且对角元素的倒数就是原矩阵的对角元素的倒数
+    //旋转矩阵同样是正交矩阵，所以其逆矩阵就是其转置矩阵
+    float3x3 InertiaTensorInv = mul(rotationMatrix,mul(InvInertiaReferenceTensor3x3,transpose(rotationMatrix)));
     granuleVelocity = granuleVelocity + granuleAcceleration*_DeltaTime;
     granulePosition = granulePosition + granuleVelocity*_DeltaTime;
 
@@ -150,8 +183,11 @@ void UpdateGranule(uint granuleIndex)
         granulePosition.z = -20-granulePosition.z;
     }
     
-    /*_GranuleBuffer[granuleIndex].position = granulePosition;
-    _GranuleBuffer[granuleIndex].velocity = granuleVelocity;*/
+    granuleAngularVelocity = granule.angularVelocity + mul(InertiaTensorInv,sumTorque)*_DeltaTime;
+    float3 temp = granuleAngularVelocity*_DeltaTime/2;
+    granuleQuaternion =  granuleQuaternion + quaternionMul(float4(0,temp),granuleQuaternion);
+    granule.angularVelocity = granuleAngularVelocity;
+    granule.quaternion = normalize(granuleQuaternion);
     granule.position = granulePosition;
     granule.velocity = granuleVelocity;
     SetGranule(granuleIndex,granule);

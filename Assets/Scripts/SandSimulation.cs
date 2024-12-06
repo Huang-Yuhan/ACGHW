@@ -53,6 +53,7 @@ public class SandSimulation : MonoBehaviour
     private float _viscousDampingCoefficient;
     private float _elasticityRestoringCoefficient;
     private int _bufferIndexBegin;                     //取值为0或1，用于交替读写两个缓冲区
+    private Matrix4x4 _granuleInertiaReferenceTensor;
     
     //ids
     private int _particlePositionBufferId;
@@ -68,7 +69,8 @@ public class SandSimulation : MonoBehaviour
     private int _frictionCoefficientId;
     private int _velocityDampingCoefficientId;
     private int _bufferIndexBeginId;
-
+    private int _granuleInertiaReferenceTensorId;
+    
     struct GranuleDataType
     {
         public Vector3 Position;
@@ -107,6 +109,7 @@ public class SandSimulation : MonoBehaviour
         _velocityDampingCoefficientId = Shader.PropertyToID("_VelocityDampingCoefficient");
         _particleCountId = Shader.PropertyToID("_ParticleCount");
         _bufferIndexBeginId = Shader.PropertyToID("_bufferIndexBegin");
+        _granuleInertiaReferenceTensorId = Shader.PropertyToID("_GranuleInertiaReferenceTensor");
     }
     
     void SetupSimulation()
@@ -146,6 +149,8 @@ public class SandSimulation : MonoBehaviour
         _viscousDampingCoefficient = 2 * m_eff * (-Mathf.Log(elasticityRestoringCoefficient)) / contactTime;
         _elasticityRestoringCoefficient = m_eff/ (contactTime * contactTime)* (Mathf.Log(elasticityRestoringCoefficient)*Mathf.Log(elasticityRestoringCoefficient)+Mathf.PI* Mathf.PI);
 
+        _granuleInertiaReferenceTensor = CalculateRefererenceInertiaTensor();
+        
         /*_viscousDampingCoefficient = (uint)1e6;
         _elasticityRestoringCoefficient = 500;*/
         Debug.Log("viscousDampingCoefficient: " + _viscousDampingCoefficient);
@@ -188,7 +193,9 @@ public class SandSimulation : MonoBehaviour
         computeShader.SetFloat(_velocityDampingCoefficientId, velocityDampingCoefficient);
         computeShader.SetInt(_particleCountId, particleCount);
         computeShader.SetInt(_bufferIndexBeginId, _bufferIndexBegin);
+        computeShader.SetMatrix(_granuleInertiaReferenceTensorId, _granuleInertiaReferenceTensor);
         computeShader.Dispatch(_kernel, Math.Max(1, particleCount / 64), 1, 1);
+        
         
         _bufferIndexBegin = 1 - _bufferIndexBegin;
     }
@@ -212,5 +219,35 @@ public class SandSimulation : MonoBehaviour
             Debug.LogFormat("particlePositions[{0}]: {1}, particleVelocities[{0}]: {2}", i, particlePositions[i], particleVelocities[i]);
         }
         
+    }
+    
+    /// <summary>
+    /// 由于四面体的对称性，可以直接计算出参考惯性张量，发现这是一个对角矩阵，因此可以简化计算他的逆矩阵
+    /// </summary>
+    /// <returns></returns>
+    Matrix4x4 CalculateRefererenceInertiaTensor()
+    {
+        Mesh sphereMesh = mesh;
+        Vector3[] vertices = sphereMesh.vertices;
+        Matrix4x4 I_ref = Matrix4x4.zero;
+        float vertexMass = particleMass/vertices.Length;
+        for (int i = 0; i < tetrahedronVertices.Length; i++)
+        {
+            I_ref[0, 0] += vertexMass * tetrahedronVertices[i].sqrMagnitude;
+            I_ref[1, 1] += vertexMass * tetrahedronVertices[i].sqrMagnitude;
+            I_ref[2, 2] += vertexMass * tetrahedronVertices[i].sqrMagnitude;
+            I_ref[0, 0] -= vertexMass * tetrahedronVertices[i][0] * tetrahedronVertices[i][0];
+            I_ref[0, 1] -= vertexMass * tetrahedronVertices[i][0] * tetrahedronVertices[i][1];
+            I_ref[0, 2] -= vertexMass * tetrahedronVertices[i][0] * tetrahedronVertices[i][2];
+            I_ref[1, 0] -= vertexMass * tetrahedronVertices[i][1] * tetrahedronVertices[i][0];
+            I_ref[1, 1] -= vertexMass * tetrahedronVertices[i][1] * tetrahedronVertices[i][1];
+            I_ref[1, 2] -= vertexMass * tetrahedronVertices[i][1] * tetrahedronVertices[i][2];
+            I_ref[2, 0] -= vertexMass * tetrahedronVertices[i][2] * tetrahedronVertices[i][0];
+            I_ref[2, 1] -= vertexMass * tetrahedronVertices[i][2] * tetrahedronVertices[i][1];
+            I_ref[2, 2] -= vertexMass * tetrahedronVertices[i][2] * tetrahedronVertices[i][2];
+        }
+        I_ref[3, 3] = 1;                
+        Debug.Log("I_ref: " + I_ref);
+        return I_ref;
     }
 }
