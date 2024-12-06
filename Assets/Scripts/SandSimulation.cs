@@ -70,6 +70,9 @@ public class SandSimulation : MonoBehaviour
     private int _velocityDampingCoefficientId;
     private int _bufferIndexBeginId;
     private int _granuleInertiaReferenceTensorId;
+    private int _RigidBodyParticleBufferId;
+    private int _rigidBodyParticleCountId;
+    
     
     struct GranuleDataType
     {
@@ -110,6 +113,8 @@ public class SandSimulation : MonoBehaviour
         _particleCountId = Shader.PropertyToID("_ParticleCount");
         _bufferIndexBeginId = Shader.PropertyToID("_bufferIndexBegin");
         _granuleInertiaReferenceTensorId = Shader.PropertyToID("_GranuleInertiaReferenceTensor");
+        _RigidBodyParticleBufferId = Shader.PropertyToID("_RigidBodyParticleBuffer");
+        _rigidBodyParticleCountId = Shader.PropertyToID("_RigidBodyParticleCount");
     }
     
     void SetupSimulation()
@@ -133,8 +138,8 @@ public class SandSimulation : MonoBehaviour
         }
         
         //TEST
-        granuleData[0].Position = new Vector3(0, 0.5f, 0);
-        granuleData[1].Position = new Vector3(0, 1.5f, 0);
+        granuleData[0].Position = new Vector3(0, 1.0f, 0);
+        granuleData[0].Velocity =new Vector3(0,0,0);
         
         _particlePositionBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
         _particleVelocityBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
@@ -182,6 +187,7 @@ public class SandSimulation : MonoBehaviour
         computeShader.SetBuffer(_kernel, _particlePositionBufferId, _particlePositionBuffer);
         computeShader.SetBuffer(_kernel, _particleVelocityBufferId, _particleVelocityBuffer);
         computeShader.SetBuffer(_kernel, _granuleDataBufferId, _granuleDataBuffer);
+        computeShader.SetBuffer(_kernel, _RigidBodyParticleBufferId, ParticelRegisterManager.Instance._particleBuffer);
         
         computeShader.SetInt(_granuleCountId, granuleCount);
         computeShader.SetFloat(_particleMassId, particleMass);
@@ -194,6 +200,7 @@ public class SandSimulation : MonoBehaviour
         computeShader.SetInt(_particleCountId, particleCount);
         computeShader.SetInt(_bufferIndexBeginId, _bufferIndexBegin);
         computeShader.SetMatrix(_granuleInertiaReferenceTensorId, _granuleInertiaReferenceTensor);
+        computeShader.SetInt(_rigidBodyParticleCountId, ParticelRegisterManager.Instance.rigidBodyParticleDatas.Count);
         computeShader.Dispatch(_kernel, Math.Max(1, particleCount / 64), 1, 1);
         
         

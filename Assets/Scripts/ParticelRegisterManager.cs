@@ -23,7 +23,7 @@ public class ParticelRegisterManager : MonoBehaviour
     private RenderParams _renderParams;
     private GraphicsBuffer _commandBuffer;
     private GraphicsBuffer.IndirectDrawIndexedArgs[] _commandData;
-    private ComputeBuffer _particleBuffer;   //粒子数据
+    public ComputeBuffer _particleBuffer;   //粒子数据
     
 
     public struct RigidBodyParticleData

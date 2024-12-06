@@ -9,12 +9,19 @@ struct GranuleDataType
     float4 quaternion;
 };
 
+struct RigidBodyParticleData
+{
+    float3 position;
+};
+
 RWStructuredBuffer<float3> _ParticlePositionBuffer;
 RWStructuredBuffer<float3> _ParticleVelocityBuffer;
 RWStructuredBuffer<GranuleDataType> _GranuleBuffer;             //所有的buffer都实际扩大了一倍，分别用于存储当前时刻和下一时刻的数据
+StructuredBuffer<RigidBodyParticleData> _RigidBodyParticleBuffer;//用于存储刚体的粒子数据
 float _DeltaTime;
 int _GranuleCount;
 int _ParticleCount;
+int _RigidBodyParticleCount;
 float _ParticleMass;
 float _ParticleRadius;
 float _ViscousDampingCoefficient;
@@ -71,6 +78,8 @@ static const float3 tetrahedron[4] = {
     float3(0,-1,1/sqrt(2))
 };
 
+static const float3 g = float3(0,-9.8,0);
+
 void CSMain();
 void TestSimulation(uint3 granuleIndex : SV_DispatchThreadID);
 void UpdateParticle(uint particleIndex);
@@ -78,7 +87,7 @@ void UpdateGranule(uint granuleIndex);
 float3x3 QuaternionToMatrix(float4 quaternion);
 float3 ParticleForceSum(uint particleIndex);         //计算particle的接触力
 float3 CalculateContactForce(uint particleIndex1,uint particleIndex2);    //计算两个particle之间的接触力，返回的是particle1受到的力
-
+float3 CalculateContactForceWithRigidBodyParticle(uint particleIndex,uint rigidBodyParticleIndex);//计算particle和刚体粒子之间的接触力
 
 inline uint GetGranuleIndex(uint particleIndex)
 {
@@ -151,37 +160,7 @@ void UpdateGranule(uint granuleIndex)
     float3x3 InertiaTensorInv = mul(rotationMatrix,mul(InvInertiaReferenceTensor3x3,transpose(rotationMatrix)));
     granuleVelocity = granuleVelocity + granuleAcceleration*_DeltaTime;
     granulePosition = granulePosition + granuleVelocity*_DeltaTime;
-
-    if(granulePosition.y<0&&granuleVelocity.y<0)
-    {
-        granuleVelocity.y = -granuleVelocity.y;
-        granulePosition.y = -granulePosition.y;
-    }
-    if(granulePosition.y>10)
-    {
-        granuleVelocity.y = 0;
-        granulePosition.y = 10;
-    }
-    if(granulePosition.x>10)
-    {
-        granuleVelocity.x = -granuleVelocity.x;
-        granulePosition.x = 20-granulePosition.x;
-    }
-    if(granulePosition.x<-10)
-    {
-        granuleVelocity.x = -granuleVelocity.x;
-        granulePosition.x = -20-granulePosition.x;
-    }
-    if(granulePosition.z>10)
-    {
-        granuleVelocity.z = -granuleVelocity.z;
-        granulePosition.z = 20-granulePosition.z;
-    }
-    if(granulePosition.z<-10)
-    {
-        granuleVelocity.z = -granuleVelocity.z;
-        granulePosition.z = -20-granulePosition.z;
-    }
+    
     
     granuleAngularVelocity = granule.angularVelocity + mul(InertiaTensorInv,sumTorque)*_DeltaTime;
     float3 temp = granuleAngularVelocity*_DeltaTime/2;
@@ -255,8 +234,42 @@ float3 ParticleForceSum(uint particleIndex)
         contactForce+=CalculateContactForce(particleIndex,firstParticleIndex+3);
         sumForce+=contactForce;
     }
-    sumForce+=float3(0,-_ParticleMass*9.8,0);
+
+    //计算和刚体粒子的接触力
+    for(uint i=0;i<_RigidBodyParticleCount;i++)
+    {
+        float3 contactForce = CalculateContactForceWithRigidBodyParticle(particleIndex,i);
+        sumForce+=contactForce;
+    }
+    
+    sumForce+=_ParticleMass*g;
     return sumForce;
+}
+
+float3 CalculateContactForceWithRigidBodyParticle(uint particleIndex,uint rigidBodyParticleIndex)
+{
+    float3 position1 = GetParticlePosition(particleIndex);
+    float3 position2 = _RigidBodyParticleBuffer[rigidBodyParticleIndex].position;
+    float overlap_degree = _ParticleRadius*2-length(position2-position1);
+    if(overlap_degree<=0)
+    {
+        return float3(0,0,0);
+    }
+    float3 contactNormal = normalize(position2-position1);
+    float3 contactPointPosition = (position1+position2)/2;
+    uint granuleIndex1 = GetGranuleIndex(particleIndex);
+    GranuleDataType granule1 = GetGranule(granuleIndex1);
+
+    float3 contactPointParticle1Velocity = granule1.velocity + cross(granule1.angularVelocity,contactPointPosition-granule1.position);
+    float3 contactPointParticle2Velocity = float3(0,0,0);
+    float3 relativeVelocity = contactPointParticle1Velocity - contactPointParticle2Velocity;
+
+    float overlap_velocity = dot(relativeVelocity,contactNormal);
+    float3 contactTangentVelocity = relativeVelocity - overlap_velocity*contactNormal;
+    float f_normal = -_ViscousDampingCoefficient*sqrt(overlap_degree)*overlap_velocity-_ElasticityRestoringCoefficient*pow(overlap_degree,1.5);
+    //return f_normal*contactNormal;
+    float f_tangent = -min(_FrictionCoefficient*f_normal,_VelocityDampingCoefficient*length(contactTangentVelocity));
+    return f_normal*contactNormal+f_tangent*normalize(contactTangentVelocity);
 }
 
 float3 CalculateContactForce(uint particleIndex1,uint particleIndex2)    //计算两个particle之间的接触力
