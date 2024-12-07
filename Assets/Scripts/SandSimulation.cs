@@ -72,6 +72,7 @@ public class SandSimulation : MonoBehaviour
     private int _granuleInertiaReferenceTensorId;
     private int _RigidBodyParticleBufferId;
     private int _rigidBodyParticleCountId;
+    private int _granuleDebugDataBufferId;
     
     
     struct GranuleDataType
@@ -85,6 +86,22 @@ public class SandSimulation : MonoBehaviour
             return sizeof(float) * 3 * 3 + sizeof(float) * 4;
         }
     }
+
+    struct GranuleDebugDataType
+    {
+        public Vector3 Position;
+        public Vector3 Velocity;
+        public Vector3 AngularVelocity;
+        public Quaternion Rotation;
+        public Vector3 Force;
+        public Vector3 Torque;
+        public Vector3 Acceleration;
+        public static int GetSize()
+        {
+            return sizeof(float) * 3 * 6 + sizeof(float) * 4;
+        }
+    }
+    private ComputeBuffer _granuleDebugDataBuffer;
     
     void SetupCommandBuffer()
     {
@@ -115,6 +132,7 @@ public class SandSimulation : MonoBehaviour
         _granuleInertiaReferenceTensorId = Shader.PropertyToID("_GranuleInertiaReferenceTensor");
         _RigidBodyParticleBufferId = Shader.PropertyToID("_RigidBodyParticleBuffer");
         _rigidBodyParticleCountId = Shader.PropertyToID("_RigidBodyParticleCount");
+        _granuleDebugDataBufferId = Shader.PropertyToID("_GranuleDebugBuffer");
     }
     
     void SetupSimulation()
@@ -138,7 +156,7 @@ public class SandSimulation : MonoBehaviour
         }
         
         //TEST
-        granuleData[0].Position = new Vector3(0, 1.0f, 0);
+        granuleData[0].Position = new Vector3(0, 4.0f, 0);
         granuleData[0].Velocity =new Vector3(0,0,0);
         
         _particlePositionBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
@@ -156,11 +174,13 @@ public class SandSimulation : MonoBehaviour
 
         _granuleInertiaReferenceTensor = CalculateRefererenceInertiaTensor();
         
-        /*_viscousDampingCoefficient = (uint)1e6;
-        _elasticityRestoringCoefficient = 500;*/
+        _viscousDampingCoefficient = (uint)10;
+        _elasticityRestoringCoefficient = 10;
         Debug.Log("viscousDampingCoefficient: " + _viscousDampingCoefficient);
         Debug.Log("elasticityRestoringCoefficient: " + _elasticityRestoringCoefficient);
 
+        _granuleDebugDataBuffer = new ComputeBuffer(granuleCount, GranuleDebugDataType.GetSize());
+        
     }
     
     void Setup()
@@ -175,6 +195,7 @@ public class SandSimulation : MonoBehaviour
         _particleVelocityBuffer?.Release();
         _granuleDataBuffer?.Release();
         _commandBuffer?.Release();
+        _granuleDebugDataBuffer?.Release();
     }
 
     private void Start()
@@ -188,10 +209,11 @@ public class SandSimulation : MonoBehaviour
         computeShader.SetBuffer(_kernel, _particleVelocityBufferId, _particleVelocityBuffer);
         computeShader.SetBuffer(_kernel, _granuleDataBufferId, _granuleDataBuffer);
         computeShader.SetBuffer(_kernel, _RigidBodyParticleBufferId, ParticelRegisterManager.Instance._particleBuffer);
+        computeShader.SetBuffer(_kernel, _granuleDebugDataBufferId, _granuleDebugDataBuffer);
         
         computeShader.SetInt(_granuleCountId, granuleCount);
         computeShader.SetFloat(_particleMassId, particleMass);
-        computeShader.SetFloat(_deltaTimeId, Time.fixedDeltaTime/2);
+        computeShader.SetFloat(_deltaTimeId, Time.fixedDeltaTime);
         computeShader.SetFloat(_particleRadiusId, sandRadius);  
         computeShader.SetFloat(_viscousDampingCoefficientId, _viscousDampingCoefficient);
         computeShader.SetFloat(_elasticityRestoringCoefficientId, _elasticityRestoringCoefficient);
@@ -201,10 +223,14 @@ public class SandSimulation : MonoBehaviour
         computeShader.SetInt(_bufferIndexBeginId, _bufferIndexBegin);
         computeShader.SetMatrix(_granuleInertiaReferenceTensorId, _granuleInertiaReferenceTensor);
         computeShader.SetInt(_rigidBodyParticleCountId, ParticelRegisterManager.Instance.rigidBodyParticleDatas.Count);
+        
+        
         computeShader.Dispatch(_kernel, Math.Max(1, particleCount / 64), 1, 1);
         
         
         _bufferIndexBegin = 1 - _bufferIndexBegin;
+        
+        DebugGranuleBuffer();
     }
 
     private void Update()
@@ -212,7 +238,6 @@ public class SandSimulation : MonoBehaviour
         material.SetBuffer("_ParticlePositionBuffer", _particlePositionBuffer);//只有_ParticlePositionBuffer需要传递给材质
         material.SetInt("_BufferBeginIndex", _bufferIndexBegin*particleCount);
         Graphics.RenderMeshIndirect(_renderParams, mesh, _commandBuffer, 1);
-        DebugParticleBuffer();
     }
 
     void DebugParticleBuffer()
@@ -221,9 +246,21 @@ public class SandSimulation : MonoBehaviour
         Vector3[] particleVelocities = new Vector3[particleCount];
         _particlePositionBuffer.GetData(particlePositions);
         _particleVelocityBuffer.GetData(particleVelocities);
-        for(int i = 0; i < particleCount; i++)
+        for (int i = 0; i < particleCount; i++)
         {
-            Debug.LogFormat("particlePositions[{0}]: {1}, particleVelocities[{0}]: {2}", i, particlePositions[i], particleVelocities[i]);
+            Debug.LogFormat("particlePositions[{0}]: {1}, particleVelocities[{0}]: {2}", i, particlePositions[i],
+                particleVelocities[i]);
+        }
+    }
+    
+    void DebugGranuleBuffer()
+    {
+        GranuleDebugDataType[] granuleDebugData = new GranuleDebugDataType[granuleCount];
+        _granuleDebugDataBuffer.GetData(granuleDebugData);
+        for (int i = 0; i < granuleCount; i++)
+        {
+            Debug.LogFormat("granuleDebugData[{0}].Position: {1}, granuleDebugData[{0}].Velocity: {2}, granuleDebugData[{0}].AngularVelocity: {3}, granuleDebugData[{0}].Rotation: {4}, granuleDebugData[{0}].Force: {5}, granuleDebugData[{0}].Torque: {6}, granuleDebugData[{0}].Acceleration: {7}", i, granuleDebugData[i].Position,
+                granuleDebugData[i].Velocity, granuleDebugData[i].AngularVelocity, granuleDebugData[i].Rotation, granuleDebugData[i].Force, granuleDebugData[i].Torque, granuleDebugData[i].Acceleration);
         }
         
     }

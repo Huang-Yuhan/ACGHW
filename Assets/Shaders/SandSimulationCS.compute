@@ -1,6 +1,24 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel CSMain
 
+#define CS_DEBUG
+
+#ifdef CS_DEBUG
+
+struct GranuleDebugDataType
+{
+    float3 position;
+    float3 velocity;
+    float3 angularVelocity;
+    float4 quaternion;
+    float3 force;
+    float3 torque;
+    float3 acceleration;
+};
+RWStructuredBuffer<GranuleDebugDataType> _GranuleDebugBuffer;
+
+#endif
+
 struct GranuleDataType
 {
     float3 position;
@@ -81,7 +99,7 @@ static const float3 tetrahedron[4] = {
 static const float3 g = float3(0,-9.8,0);
 
 void CSMain();
-void TestSimulation(uint3 granuleIndex : SV_DispatchThreadID);
+void Simulation(uint3 granuleIndex : SV_DispatchThreadID);
 void UpdateParticle(uint particleIndex);
 void UpdateGranule(uint granuleIndex);
 float3x3 QuaternionToMatrix(float4 quaternion);
@@ -98,7 +116,7 @@ inline uint GetFirstParticleIndex(uint granuleIndex)
     return granuleIndex*4;
 }
 
-float3 getParticleOffset(uint particleIndex)
+float3  getParticleOffset(uint particleIndex)
 {
     return tetrahedron[particleIndex%4]*_ParticleRadius;
 }
@@ -106,10 +124,10 @@ float3 getParticleOffset(uint particleIndex)
 [numthreads(64,1,1)]
 void CSMain (uint3 granuleIndex : SV_DispatchThreadID)
 {
-    TestSimulation(granuleIndex);
+    Simulation(granuleIndex);
 }
 
-void TestSimulation(uint3 granuleIndex : SV_DispatchThreadID)
+void Simulation(uint3 granuleIndex : SV_DispatchThreadID)
 {
 
     UpdateGranule(granuleIndex.x);
@@ -150,7 +168,7 @@ void UpdateGranule(uint granuleIndex)
 
     sumTorque+=torque1+torque2+torque3+torque4;
 
-    float3x3 InertiaReferenceTensor3x3 = _GranuleInertiaReferenceTensor;
+    float3x3 InertiaReferenceTensor3x3 = float3x3(_GranuleInertiaReferenceTensor[0].xyz,_GranuleInertiaReferenceTensor[1].xyz,_GranuleInertiaReferenceTensor[2].xyz);
     float3x3 InvInertiaReferenceTensor3x3 = float3x3(1/InertiaReferenceTensor3x3[0][0],0,0,0,1/InertiaReferenceTensor3x3[1][1],0,0,0,1/InertiaReferenceTensor3x3[2][2]);
     
     //float3x3 InertiaTensor = mul(rotationMatrix,mul(InertiaReferenceTensor3x3,transpose(rotationMatrix)));
@@ -170,6 +188,19 @@ void UpdateGranule(uint granuleIndex)
     granule.position = granulePosition;
     granule.velocity = granuleVelocity;
     SetGranule(granuleIndex,granule);
+
+    #ifdef CS_DEBUG
+    GranuleDebugDataType debugData;
+    debugData.position = granulePosition;
+    debugData.velocity = granuleVelocity;
+    debugData.angularVelocity = granuleAngularVelocity;
+    debugData.quaternion = granuleQuaternion;
+    debugData.force = sumForce;
+    debugData.torque = sumTorque;
+    debugData.acceleration = granuleAcceleration;
+    _GranuleDebugBuffer[granuleIndex] = debugData;
+    
+    #endif
     
     UpdateParticle(firstParticleIndex);
     UpdateParticle(firstParticleIndex+1);
@@ -234,9 +265,9 @@ float3 ParticleForceSum(uint particleIndex)
     }
 
     //计算和刚体粒子的接触力
-    for(uint i=0;i<_RigidBodyParticleCount;i++)
+    for(uint k=0;k<(uint)_RigidBodyParticleCount;k++)
     {
-        float3 contactForce = CalculateContactForceWithRigidBodyParticle(particleIndex,i);
+        float3 contactForce = CalculateContactForceWithRigidBodyParticle(particleIndex,k);
         sumForce+=contactForce;
     }
     
