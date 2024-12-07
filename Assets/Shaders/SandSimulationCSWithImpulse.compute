@@ -89,6 +89,10 @@ void SetGranule(uint granuleIndex,GranuleDataType granule)
 {
     _GranuleBuffer[granuleIndex+(1-_bufferIndexBegin)*_GranuleCount] = granule;
 }
+uint GetNowGranuleIndex(uint granuleIndex)//返回当前正在使用的granule的索引
+{
+    return granuleIndex+_bufferIndexBegin*_GranuleCount;
+}
 
 float4 quaternionMul(float4 q1,float4 q2)
 {
@@ -254,7 +258,10 @@ GranuleDataType SolveCollision(uint granuleIndex)                //在里面进�
 {
     GranuleDataType res = GetGranule(granuleIndex);
 
-    res.velocity+=g*_DeltaTime;
+    res.velocity = res.velocity+g*_DeltaTime;
+
+    _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].velocity = res.velocity;
+    
 
     float3x3 granuleRotationMatrix = QuaternionToMatrix(res.quaternion);
     float3x3 InertiaReferenceTensorInv = float3x3(1/_GranuleInertiaReferenceTensor[0][0],0,0,
@@ -268,7 +275,9 @@ GranuleDataType SolveCollision(uint granuleIndex)                //在里面进�
     {
         ImpulseDataType impulse = CalculatePlaneImpluse(granuleIndex,i);
         res.velocity += impulse.impulse/_ParticleMass/4;
+        _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].velocity = res.velocity;
         res.angularVelocity += mul(InertiaTensorInv,cross(impulse.position-res.position,impulse.impulse));
+        _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].angularVelocity = res.angularVelocity;
     }
     
     
@@ -326,6 +335,33 @@ ImpulseDataType CalculatePlaneImpluse(uint granuleIndex,uint planeIndex)
     }
     
     average_position/=average_mass;
+
+    {
+        int test_count=0;
+        float3 test_pos=float3(0,0,0);
+        for(int i=0;i<4;i++)
+        {
+            float3 particlePosition = GetParticlePosition(firstParticleIndex+i);
+            //这里采用暴力枚举球面上的每个点
+            for(float alpha=0;alpha<2*3.1415926;alpha+=0.1)
+            {
+                for(float beta=0;beta<3.1415926;beta+=0.1)
+                {
+                    float3 spherePoint = particlePosition+_ParticleRadius*float3(sin(beta)*cos(alpha),sin(beta)*sin(alpha),cos(beta));
+                    dis = dot(spherePoint-pointOnPlane,planeNormal);
+                    if(dis>0)continue;
+                    float3 v = granule.velocity+cross(granule.angularVelocity,spherePoint-granule.position);
+                    if(dot(v,planeNormal)>0)continue;
+                    test_count++;
+                    test_pos+=spherePoint;
+                }
+            }
+        }
+        if(test_count==0)return res;
+        test_pos/=test_count;
+        average_position = test_pos;
+    }
+    
     
     float3 relativePoint = average_position-granule.position;
     float3 relativeVelocity = granule.velocity+cross(granule.angularVelocity,relativePoint);
