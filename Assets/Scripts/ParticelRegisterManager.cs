@@ -55,6 +55,10 @@ public class ParticelRegisterManager : MonoBehaviour
 
     void SetupParticles()
     {
+        if(rigidBodyParticleDatas.Count == 0)
+        {
+            return;
+        }
         _particleBuffer = new ComputeBuffer(rigidBodyParticleDatas.Count, sizeof(float) * 3);
         _particleBuffer.SetData(rigidBodyParticleDatas);
     }
@@ -67,8 +71,8 @@ public class ParticelRegisterManager : MonoBehaviour
 
     private void Update()
     {
-        material.SetBuffer("_ParticlePositionBuffer",_particleBuffer);
-        material.SetInt("_BufferBeginIndex",0);
-        Graphics.DrawMeshInstancedIndirect(mesh, 0, material, _renderParams.worldBounds, _commandBuffer);
+        // material.SetBuffer("_ParticlePositionBuffer",_particleBuffer);
+        // material.SetInt("_BufferBeginIndex",0);
+        // Graphics.DrawMeshInstancedIndirect(mesh, 0, material, _renderParams.worldBounds, _commandBuffer);
     }
 }

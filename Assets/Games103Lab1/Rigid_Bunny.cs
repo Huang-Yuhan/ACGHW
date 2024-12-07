@@ -111,7 +111,7 @@ public class Rigid_Bunny : MonoBehaviour
 		{
 			var pos = T+R.MultiplyPoint(vertices[i]);
 			var vi = v+Vector3.Cross(w, pos-T);
-			if(Vector3.Dot(pos-P, N)<0&&Vector3.Dot(vi, N)<0)
+			if(Vector3.Dot(pos-P, N)<0)
 			{
 				in_plane.Add(pos);
 			}
@@ -131,6 +131,12 @@ public class Rigid_Bunny : MonoBehaviour
 		var relativePoint = averagePoint-T;//相对坐标
 		
 		var v_at_point = v+Vector3.Cross(w, relativePoint);
+		
+		if(Vector3.Dot(v_at_point, N)>0)
+		{
+			return;
+		}
+		
 		Vector3 v_normal = Vector3.Dot(v_at_point, N)*N;
 		Vector3 v_tangent = v_at_point-v_normal;
 		float a =Mathf.Max(0,1-friction*(1+restitution)*v_normal.magnitude/v_tangent.magnitude);

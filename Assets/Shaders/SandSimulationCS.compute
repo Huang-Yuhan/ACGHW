@@ -219,7 +219,7 @@ void UpdateParticle(uint particleIndex)
     float4 granuleQuaternion = granule.quaternion;
     float3x3 granuleRotationMatrix = QuaternionToMatrix(granuleQuaternion);
     float3 particlePosition = granulePosition + mul(granuleRotationMatrix,getParticleOffset(particleIndex));
-    float3 particleVelocity = granuleVelocity + cross(granuleAngularVelocity,getParticleOffset(particleIndex));
+    float3 particleVelocity = granuleVelocity + cross(granuleAngularVelocity,particlePosition-granulePosition);
 
     /*_ParticlePositionBuffer[particleIndex] = particlePosition;
     _ParticleVelocityBuffer[particleIndex] = particleVelocity;*/
