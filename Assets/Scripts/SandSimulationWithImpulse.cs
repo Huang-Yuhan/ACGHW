@@ -27,6 +27,8 @@ public class SandSimulationWithImpulse : MonoBehaviour
     public float restitutionCoefficient = 0.5f;
     [Tooltip("粒子的摩擦系数")]
     public float frictionCoefficient = 0.2f;
+    [Tooltip("时间步长")]
+    public float deltaTime = 0.02f;
     
     /// <summary>
     /// https://zh.wikipedia.org/wiki/%E6%AD%A3%E5%9B%9B%E9%9D%A2%E9%AB%94
@@ -200,7 +202,7 @@ public class SandSimulationWithImpulse : MonoBehaviour
         
         computeShader.SetInt(_granuleCountId, granuleCount);
         computeShader.SetFloat(_particleMassId, particleMass);
-        computeShader.SetFloat(_deltaTimeId, Time.fixedDeltaTime);
+        computeShader.SetFloat(_deltaTimeId, deltaTime);
         computeShader.SetFloat(_particleRadiusId, sandRadius);  
         computeShader.SetInt(_particleCountId, particleCount);
         computeShader.SetInt(_bufferIndexBeginId, _bufferIndexBegin);
@@ -245,7 +247,7 @@ public class SandSimulationWithImpulse : MonoBehaviour
         _granuleDebugDataBuffer.GetData(granuleDebugData);
         for (int i = 0; i < granuleCount; i++)
         {
-            Debug.LogFormat("granuleDebugData[{0}].relativePosition:{1},relativeVelocity:{2}", i, granuleDebugData[i].Position, granuleDebugData[i].Velocity);
+            Debug.LogFormat("granuleDebugData[{0}].relativePosition:{1}\n relativeVelocity:{2}\n impulse:{3}", i, granuleDebugData[i].Position, granuleDebugData[i].Velocity, granuleDebugData[i].Force);
         }
         
     }

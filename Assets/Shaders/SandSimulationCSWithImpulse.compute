@@ -178,6 +178,12 @@ void UpdateGranule(uint granuleIndex)
 {
     #ifdef CS_DEBUG
         _GranuleDebugBuffer[granuleIndex].position = float3(0,0,0);
+        _GranuleDebugBuffer[granuleIndex].velocity = float3(0,0,0);
+        _GranuleDebugBuffer[granuleIndex].angularVelocity = float3(0,0,0);
+        _GranuleDebugBuffer[granuleIndex].quaternion = float4(0,0,0,1);
+        _GranuleDebugBuffer[granuleIndex].force = float3(0,0,0);
+        _GranuleDebugBuffer[granuleIndex].torque = float3(0,0,0);
+        _GranuleDebugBuffer[granuleIndex].acceleration = float3(0,0,0);
     #endif
     
     uint firstParticleIndex = GetFirstParticleIndex(granuleIndex);
@@ -352,6 +358,11 @@ ImpulseDataType CalculatePlaneImpluse(uint granuleIndex,uint planeIndex)
                           0,0,0.25f/_ParticleMass)-mul(mul(RriStarMatrix,InertiaTensorInv),RriStarMatrix);
 
     float3 J = mul(GetMatrixInv(K),v_new-relativeVelocity);
+
+    #ifdef CS_DEBUG
+        _GranuleDebugBuffer[granuleIndex].force = J;
+    #endif
+    
     res.impulse = J;
     res.position = average_position;
     return res;
