@@ -351,7 +351,7 @@ ImpulseDataType CalculatePlaneImpluse(uint granuleIndex,uint planeIndex)
                     dis = dot(spherePoint-pointOnPlane,planeNormal);
                     if(dis>0)continue;
                     float3 v = granule.velocity+cross(granule.angularVelocity,spherePoint-granule.position);
-                    if(dot(v,planeNormal)>0)continue;
+                    //if(dot(v,planeNormal)>0)continue;
                     test_count++;
                     test_pos+=spherePoint;
                 }
