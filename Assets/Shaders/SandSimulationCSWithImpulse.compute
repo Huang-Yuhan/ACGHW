@@ -1,7 +1,13 @@
 // Each #kernel tells which function to compile; you can have many kernels
+#define CS_DEBUG
+#define GPU_OPTIMIZE_PARTICLE_COLLISION
+
+#ifdef GPU_OPTIMIZE_PARTICLE_COLLISION
+    #pragma kernel GridUpdateMain
+#endif
+
 #pragma kernel CSMain
 
-#define CS_DEBUG
 
 #ifdef CS_DEBUG
 
@@ -47,6 +53,46 @@ struct PlaneData
 RWStructuredBuffer<float3> _ParticlePositionBuffer;
 RWStructuredBuffer<float3> _ParticleVelocityBuffer;
 RWStructuredBuffer<GranuleDataType> _GranuleBuffer;             //所有的buffer都实际扩大了一倍，分别用于存储当前时刻和下一时刻的数据
+
+#ifdef GPU_OPTIMIZE_PARTICLE_COLLISION
+    //grid
+    //这里针对的对象是particle，不是granule
+    RWStructuredBuffer<int> _GridCountBuffer;                       //这个只需要初始化的时候全盘扫，后面就可以动态更新了
+    RWStructuredBuffer<int> _GridParticleBuffer;                    //实际存储下标的列表buffer
+    RWStructuredBuffer<int> _GridParticleBeginBuffer;               //存储每个格子的粒子在_GridParticleBuffer中的开始位置
+    RWStructuredBuffer<int> _GridParticleEndBuffer;                 //存储每个格子的粒子在_GridParticleBuffer中的结束位置
+
+    static const int3 gridOffset[26] = {
+        int3(-1,-1,-1),int3(-1,-1,0),int3(-1,-1,1),
+        int3(-1,0,-1),int3(-1,0,0),int3(-1,0,1),
+        int3(-1,1,-1),int3(-1,1,0),int3(-1,1,1),
+        int3(0,-1,-1),int3(0,-1,0),int3(0,-1,1),
+        int3(0,0,-1),int3(0,0,1),                                       //这里不需要加上(0,0,0)
+        int3(0,1,-1),int3(0,1,0),int3(0,1,1),
+        int3(1,-1,-1),int3(1,-1,0),int3(1,-1,1),
+        int3(1,0,-1),int3(1,0,0),int3(1,0,1),
+        int3(1,1,-1),int3(1,1,0),int3(1,1,1)
+    };
+
+    uint3 _GridResolution;
+    float _GridCellSize;
+
+    void GridUpdateMain();
+    int3 GetGridIndex(float3 position)
+    {
+        static const float3 start= float3(-5,0,-5);
+        float3 offset = position-start;
+        float3 resFloat = offset/_GridCellSize;
+        //这里的取整是向下取整
+        return uint3(resFloat.x,resFloat.y,resFloat.z);
+    }
+    int GetGridIndex1D(int3 gridIndex)
+    {
+        return gridIndex.x+gridIndex.y*_GridResolution.x+gridIndex.z*_GridResolution.x*_GridResolution.y;
+    }
+
+#endif
+
 StructuredBuffer<RigidBodyParticleData> _RigidBodyParticleBuffer;//用于存储刚体的粒子数据
 StructuredBuffer<PlaneData> _PlaneBuffer;
 float _DeltaTime;
@@ -166,7 +212,7 @@ float3  getParticleOffset(uint particleIndex)
     return tetrahedron[particleIndex%4]*_ParticleRadius;
 }
 
-[numthreads(1024,1,1)]
+[numthreads(64,1,1)]
 void CSMain (uint3 granuleIndex : SV_DispatchThreadID)
 {
     Simulation(granuleIndex);
@@ -180,7 +226,7 @@ void Simulation(uint3 granuleIndex : SV_DispatchThreadID)
 
 void UpdateGranule(uint granuleIndex)
 {
-    if(granuleIndex>=_GranuleCount)
+    if(granuleIndex>=(uint)_GranuleCount)
     {
         return;
     }
@@ -295,25 +341,34 @@ GranuleDataType SolveCollision(uint granuleIndex)                //在里面进�
 
     
     //计算平面的碰撞
-    for(int i=0;i<_PlaneCount;i++)
+    for(int i_plane=0;i_plane<_PlaneCount;i_plane++)
     {
-        ImpulseDataType impulse = CalculatePlaneImpulse(granuleIndex,i);
+        ImpulseDataType impulse = CalculatePlaneImpulse(granuleIndex,i_plane);
         res.velocity += impulse.impulse/_ParticleMass/4;
         _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].velocity = res.velocity;
         res.angularVelocity += mul(InertiaTensorInv,cross(impulse.position-res.position,impulse.impulse));
         _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].angularVelocity = res.angularVelocity;
     }
+
+    #ifdef GPU_OPTIMIZE_PARTICLE_COLLISION
+
+        //得到granule在哪个格子中(因为gridCellSize是3倍的粒子半径，所以不可能存在一个granule在某个轴上跨越3个及以上的格子)
+        float3 granulePosition = res.position;
+        uint3 gridIndex = GetGridIndex(granulePosition);
+        uint gridIndex1D = GetGridIndex1D(gridIndex);
+        //可能要重新考虑下下面的实现，改为granule->particle而不是granule->granule
     
-    //计算Granule之间的碰撞
-    for(int i=0;i<_GranuleCount;i++)
-    {
-        ImpulseDataType impulse = CalculateGranuleImpulse(granuleIndex,i);
-        res.velocity += impulse.impulse/_ParticleMass/4;
-        _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].velocity = res.velocity;
-        res.angularVelocity += mul(InertiaTensorInv,cross(impulse.position-res.position,impulse.impulse));
-        _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].angularVelocity = res.angularVelocity;
-    }
-    
+    #else
+        //计算Granule之间的碰撞
+        for(int i=0;i<_GranuleCount;i++)
+        {
+            ImpulseDataType impulse = CalculateGranuleImpulse(granuleIndex,i);
+            res.velocity += impulse.impulse/_ParticleMass/4;
+            _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].velocity = res.velocity;
+            res.angularVelocity += mul(InertiaTensorInv,cross(impulse.position-res.position,impulse.impulse));
+            _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].angularVelocity = res.angularVelocity;
+        }
+    #endif  
     
     
     return res;
@@ -520,4 +575,11 @@ ImpulseDataType CalculatePlaneImpulse(uint granuleIndex,uint planeIndex)
     res.impulse = J;
     res.position = average_position;
     return res;
+}
+
+
+[numthreads(1,1,1)]
+void GridUpdateMain(uint3 particleIndex : SV_DispatchThreadID)
+{
+
 }
