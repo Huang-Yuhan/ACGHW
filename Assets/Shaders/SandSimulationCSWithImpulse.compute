@@ -210,6 +210,14 @@ void UpdateGranule(uint granuleIndex)
     res.quaternion = normalize(res.quaternion);
     
     SetGranule(granuleIndex,res);
+
+    #ifdef CS_DEBUG
+        _GranuleDebugBuffer[granuleIndex].position = res.position;
+        _GranuleDebugBuffer[granuleIndex].velocity = res.velocity;
+        _GranuleDebugBuffer[granuleIndex].angularVelocity = res.angularVelocity;
+        _GranuleDebugBuffer[granuleIndex].quaternion = res.quaternion;
+    #endif
+    
     
     UpdateParticle(firstParticleIndex);
     UpdateParticle(firstParticleIndex+1);
@@ -326,7 +334,7 @@ ImpulseDataType CalculatePlaneImpluse(uint granuleIndex,uint planeIndex)
             float dm = (1-cos(alpha))*_ParticleMass/2;
             float ydm = -_ParticleRadius/4*sin(alpha)*sin(alpha)*_ParticleMass;
             average_mass+=dm;
-            average_position+=particlePosition+planeNormal*ydm;
+            average_position+=dm*(particlePosition+planeNormal*ydm);
         }
     }
     if(average_mass==0)
@@ -335,41 +343,10 @@ ImpulseDataType CalculatePlaneImpluse(uint granuleIndex,uint planeIndex)
     }
     
     average_position/=average_mass;
-
-    {
-        int test_count=0;
-        float3 test_pos=float3(0,0,0);
-        for(int i=0;i<4;i++)
-        {
-            float3 particlePosition = GetParticlePosition(firstParticleIndex+i);
-            //这里采用暴力枚举球面上的每个点
-            for(float alpha=0;alpha<2*3.1415926;alpha+=0.1)
-            {
-                for(float beta=0;beta<3.1415926;beta+=0.1)
-                {
-                    float3 spherePoint = particlePosition+_ParticleRadius*float3(sin(beta)*cos(alpha),sin(beta)*sin(alpha),cos(beta));
-                    dis = dot(spherePoint-pointOnPlane,planeNormal);
-                    if(dis>0)continue;
-                    float3 v = granule.velocity+cross(granule.angularVelocity,spherePoint-granule.position);
-                    //if(dot(v,planeNormal)>0)continue;
-                    test_count++;
-                    test_pos+=spherePoint;
-                }
-            }
-        }
-        if(test_count==0)return res;
-        test_pos/=test_count;
-        average_position = test_pos;
-    }
     
     
     float3 relativePoint = average_position-granule.position;
     float3 relativeVelocity = granule.velocity+cross(granule.angularVelocity,relativePoint);
-
-    #ifdef CS_DEBUG
-        _GranuleDebugBuffer[granuleIndex].position = relativePoint;
-        _GranuleDebugBuffer[granuleIndex].velocity = relativeVelocity;
-    #endif
 
     if(dot(relativeVelocity,planeNormal)>0)
     {

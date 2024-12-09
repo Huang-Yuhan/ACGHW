@@ -247,7 +247,7 @@ public class SandSimulationWithImpulse : MonoBehaviour
         _granuleDebugDataBuffer.GetData(granuleDebugData);
         for (int i = 0; i < granuleCount; i++)
         {
-            Debug.LogFormat("granuleDebugData[{0}].relativePosition:{1}\n relativeVelocity:{2}\n impulse:{3}", i, granuleDebugData[i].Position, granuleDebugData[i].Velocity, granuleDebugData[i].Force);
+            Debug.LogFormat("granuleDebugData[{0}].position:{1}", i, granuleDebugData[i].Position);
         }
         
     }
