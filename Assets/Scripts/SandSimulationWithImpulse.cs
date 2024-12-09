@@ -30,6 +30,9 @@ public class SandSimulationWithImpulse : MonoBehaviour
     [Tooltip("时间步长")]
     public float deltaTime = 0.02f;
     
+    
+    public bool isStopCompute = false;
+    
     /// <summary>
     /// https://zh.wikipedia.org/wiki/%E6%AD%A3%E5%9B%9B%E9%9D%A2%E9%AB%94
     /// 以正四面体的中心作为原点建立三维直角坐标系的话，棱长a=2的正四面体的顶点坐标
@@ -153,7 +156,9 @@ public class SandSimulationWithImpulse : MonoBehaviour
         
         // //TEST
         /*granuleData[0].Position = new Vector3(0, 5, 0);
-        granuleData[1].Position = new Vector3(0, 3,0);*/
+        granuleData[0].Velocity = Vector3.zero;
+        granuleData[1].Position = new Vector3(0, 3,0);
+        granuleData[1].Velocity = Vector3.zero;*/
         
         _particlePositionBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
         _particleVelocityBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
@@ -193,6 +198,8 @@ public class SandSimulationWithImpulse : MonoBehaviour
 
     private void FixedUpdate()
     {
+        if(isStopCompute) return;
+        
         computeShader.SetBuffer(_kernel, _particlePositionBufferId, _particlePositionBuffer);
         computeShader.SetBuffer(_kernel, _particleVelocityBufferId, _particleVelocityBuffer);
         computeShader.SetBuffer(_kernel, _granuleDataBufferId, _granuleDataBuffer);
@@ -213,12 +220,12 @@ public class SandSimulationWithImpulse : MonoBehaviour
         computeShader.SetInt(_planeCountId, PlaneRegisterManager.Instance.planeDatas.Count);
         
         
-        computeShader.Dispatch(_kernel, Math.Max(1, particleCount / 64), 1, 1);
+        computeShader.Dispatch(_kernel, Math.Max(1, granuleCount / 1024), 1, 1);
         
         
         _bufferIndexBegin = 1 - _bufferIndexBegin;
         
-        DebugGranuleBuffer();
+        //DebugGranuleBuffer();
     }
 
     private void Update()

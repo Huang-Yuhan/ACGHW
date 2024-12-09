@@ -180,6 +180,11 @@ void Simulation(uint3 granuleIndex : SV_DispatchThreadID)
 
 void UpdateGranule(uint granuleIndex)
 {
+    if(granuleIndex>=_GranuleCount)
+    {
+        return;
+    }
+    
     #ifdef CS_DEBUG
         _GranuleDebugBuffer[granuleIndex].position = float3(0,0,0);
         _GranuleDebugBuffer[granuleIndex].velocity = float3(0,0,0);
@@ -208,6 +213,15 @@ void UpdateGranule(uint granuleIndex)
     float3 temp = granuleAngularVelocity*_DeltaTime/2;
     res.quaternion = quaternionMul(float4(0,temp),res.quaternion)+res.quaternion;
     res.quaternion = normalize(res.quaternion);
+
+    /*
+    if(isnan(res.position.x))
+    {
+        res.position = float3(0,5,0);
+        res.velocity = float3(0,0,0);
+        res.angularVelocity = float3(0,0,0);
+        res.quaternion = float4(0,0,0,1);
+    }*/
     
     SetGranule(granuleIndex,res);
 
@@ -278,7 +292,9 @@ GranuleDataType SolveCollision(uint granuleIndex)                //在里面进�
     float3x3 InertiaTensorInv = mul(mul(granuleRotationMatrix,InertiaReferenceTensorInv),transpose(granuleRotationMatrix));
 
 
-    //这里先只计算平面的碰撞
+
+    
+    //计算平面的碰撞
     for(int i=0;i<_PlaneCount;i++)
     {
         ImpulseDataType impulse = CalculatePlaneImpulse(granuleIndex,i);
@@ -287,7 +303,7 @@ GranuleDataType SolveCollision(uint granuleIndex)                //在里面进�
         res.angularVelocity += mul(InertiaTensorInv,cross(impulse.position-res.position,impulse.impulse));
         _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].angularVelocity = res.angularVelocity;
     }
-
+    
     //计算Granule之间的碰撞
     for(int i=0;i<_GranuleCount;i++)
     {
@@ -317,24 +333,30 @@ float3 GetAveragePosition(uint granuleIndex1,uint granuleIndex2)
     for(int i=0;i<4;i++)
     {
         uint particleIndex1 = firstParticleIndex1+i;
-        uint particleIndex2 = firstParticleIndex2+i;
-        float3 particlePosition1 = GetParticlePosition(particleIndex1);
-        float3 particlePosition2 = GetParticlePosition(particleIndex2);
 
-        float dis = length(particlePosition1-particlePosition2);
-        if(dis-2*_ParticleRadius<0)           //说明球体与球体相交
+        for(int j=0;j<4;j++)
         {
-            //将其转换为球体和平面相交的情况
-            float3 pointOnPlane = (particlePosition1+particlePosition2)/2;
-            float3 planeNormal = normalize(particlePosition1-particlePosition2);
+            uint particleIndex2 = firstParticleIndex2+j;
+            float3 particlePosition1 = GetParticlePosition(particleIndex1);
+            float3 particlePosition2 = GetParticlePosition(particleIndex2);
 
-            float alpha = acos(clamp(dis/2/_ParticleRadius,-1,1));
-            float dm = (1-cos(alpha))*_ParticleMass/2;
-            float ydm = -_ParticleRadius/4*sin(alpha)*sin(alpha)*_ParticleMass;
-            average_mass+=dm;
-            average_position+=dm*(pointOnPlane+planeNormal*ydm);
+            float dis = length(particlePosition1-particlePosition2);
+            if(dis-2*_ParticleRadius<0)           //说明球体与球体相交
+            {
+                //将其转换为球体和平面相交的情况
+                float3 pointOnPlane = (particlePosition1+particlePosition2)/2;
+                float3 planeNormal = normalize(particlePosition1-particlePosition2);
+
+                float alpha = acos(clamp(dis/2/_ParticleRadius,-1,1));
+                float dm = (1-cos(alpha))*_ParticleMass/2;
+                float ydm = -_ParticleRadius/4*sin(alpha)*sin(alpha)*_ParticleMass;
+                average_mass+=dm;
+                average_position+=dm*(pointOnPlane+planeNormal*ydm);
             
+            }
         }
+        
+
         
     }
 
@@ -354,6 +376,10 @@ ImpulseDataType CalculateGranuleImpulse(uint granule1Index,uint granule2Index)
     res.impulse = float3(0,0,0);
     res.position = float3(0,0,0);
 
+    if(granule1Index==granule2Index)
+    {
+        return res;
+    }
 
     float3 average_position = GetAveragePosition(granule1Index,granule2Index);
 
@@ -375,7 +401,15 @@ ImpulseDataType CalculateGranuleImpulse(uint granule1Index,uint granule2Index)
 
     float3 v_normal = dot(relativeVelocity,normal)*normal;
     float3 v_tangent = relativeVelocity-v_normal;
-    float a = max(0,1-_FrictionCoefficient*(1+_RestitutionCoefficient)*length(v_normal)/length(v_tangent));
+    float a=0;
+    if(length(v_tangent)==0)
+    {
+        a = 0;
+    }
+    else
+    {
+        a = max(0,1-_FrictionCoefficient*(1+_RestitutionCoefficient)*length(v_normal)/length(v_tangent));
+    }
     float3 v_new_normal = -_RestitutionCoefficient*v_normal;
     float3 v_new_tangent = a*v_tangent;
     float3 v_new = v_new_normal+v_new_tangent;
@@ -453,7 +487,16 @@ ImpulseDataType CalculatePlaneImpulse(uint granuleIndex,uint planeIndex)
 
     float3 v_normal = dot(relativeVelocity,planeNormal)*planeNormal;
     float3 v_tangent = relativeVelocity-v_normal;
-    float a = max(0,1-_FrictionCoefficient*(1+_RestitutionCoefficient)*length(v_normal)/length(v_tangent));
+    float a =0;
+    //判断v_tangent是否为0
+    if(length(v_tangent)==0)
+    {
+        a = 0;
+    }
+    else
+    {
+        a = max(0,1-_FrictionCoefficient*(1+_RestitutionCoefficient)*length(v_normal)/length(v_tangent));
+    }
     float3 v_new_normal = -_RestitutionCoefficient*v_normal;
     float3 v_new_tangent = a*v_tangent;
     float3 v_new = v_new_normal+v_new_tangent;
