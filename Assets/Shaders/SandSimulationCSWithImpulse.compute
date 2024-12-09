@@ -148,9 +148,9 @@ void UpdateParticle(uint particleIndex);
 void UpdateGranule(uint granuleIndex);
 float3x3 QuaternionToMatrix(float4 quaternion);
 GranuleDataType SolveCollision(uint granuleIndex);             //在里面进行碰撞检测和碰撞处理
-ImpulseDataType CalculateImpluse(uint granuleIndex,uint particleIndex);
-ImpulseDataType CalculateRigidBodyParticleImpluse(uint granuleIndex,uint rigidBodyParticleIndex);
-ImpulseDataType CalculatePlaneImpluse(uint granuleIndex,uint planeIndex);
+ImpulseDataType CalculateGranuleImpulse(uint granule1Index,uint granule2Index);
+ImpulseDataType CalculateRigidBodyParticleImpulse(uint granuleIndex,uint rigidBodyParticleIndex);
+ImpulseDataType CalculatePlaneImpulse(uint granuleIndex,uint planeIndex);
 
 inline uint GetGranuleIndex(uint particleIndex)
 {
@@ -166,7 +166,7 @@ float3  getParticleOffset(uint particleIndex)
     return tetrahedron[particleIndex%4]*_ParticleRadius;
 }
 
-[numthreads(64,1,1)]
+[numthreads(1024,1,1)]
 void CSMain (uint3 granuleIndex : SV_DispatchThreadID)
 {
     Simulation(granuleIndex);
@@ -281,7 +281,17 @@ GranuleDataType SolveCollision(uint granuleIndex)                //在里面进�
     //这里先只计算平面的碰撞
     for(int i=0;i<_PlaneCount;i++)
     {
-        ImpulseDataType impulse = CalculatePlaneImpluse(granuleIndex,i);
+        ImpulseDataType impulse = CalculatePlaneImpulse(granuleIndex,i);
+        res.velocity += impulse.impulse/_ParticleMass/4;
+        _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].velocity = res.velocity;
+        res.angularVelocity += mul(InertiaTensorInv,cross(impulse.position-res.position,impulse.impulse));
+        _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].angularVelocity = res.angularVelocity;
+    }
+
+    //计算Granule之间的碰撞
+    for(int i=0;i<_GranuleCount;i++)
+    {
+        ImpulseDataType impulse = CalculateGranuleImpulse(granuleIndex,i);
         res.velocity += impulse.impulse/_ParticleMass/4;
         _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].velocity = res.velocity;
         res.angularVelocity += mul(InertiaTensorInv,cross(impulse.position-res.position,impulse.impulse));
@@ -289,24 +299,112 @@ GranuleDataType SolveCollision(uint granuleIndex)                //在里面进�
     }
     
     
+    
     return res;
 }
 
-ImpulseDataType CalculateImpluse(uint granuleIndex,uint particleIndex)
+float3 GetAveragePosition(uint granuleIndex1,uint granuleIndex2)
+{
+    uint firstParticleIndex1 = GetFirstParticleIndex(granuleIndex1);
+    uint firstParticleIndex2 = GetFirstParticleIndex(granuleIndex2);
+
+    GranuleDataType granule1 = GetGranule(granuleIndex1);
+    GranuleDataType granule2 = GetGranule(granuleIndex2);
+    
+    float average_mass = 0;
+    float3 average_position = float3(0,0,0);
+
+    for(int i=0;i<4;i++)
+    {
+        uint particleIndex1 = firstParticleIndex1+i;
+        uint particleIndex2 = firstParticleIndex2+i;
+        float3 particlePosition1 = GetParticlePosition(particleIndex1);
+        float3 particlePosition2 = GetParticlePosition(particleIndex2);
+
+        float dis = length(particlePosition1-particlePosition2);
+        if(dis-2*_ParticleRadius<0)           //说明球体与球体相交
+        {
+            //将其转换为球体和平面相交的情况
+            float3 pointOnPlane = (particlePosition1+particlePosition2)/2;
+            float3 planeNormal = normalize(particlePosition1-particlePosition2);
+
+            float alpha = acos(clamp(dis/2/_ParticleRadius,-1,1));
+            float dm = (1-cos(alpha))*_ParticleMass/2;
+            float ydm = -_ParticleRadius/4*sin(alpha)*sin(alpha)*_ParticleMass;
+            average_mass+=dm;
+            average_position+=dm*(pointOnPlane+planeNormal*ydm);
+            
+        }
+        
+    }
+
+    if(average_mass==0)
+    {
+        return float3(0,0,0);
+    }
+    else 
+    {
+        return average_position/average_mass;
+    }
+}
+
+ImpulseDataType CalculateGranuleImpulse(uint granule1Index,uint granule2Index)
+{
+    ImpulseDataType res;
+    res.impulse = float3(0,0,0);
+    res.position = float3(0,0,0);
+
+
+    float3 average_position = GetAveragePosition(granule1Index,granule2Index);
+
+    if(average_position.x==0&&average_position.y==0&&average_position.z==0)
+    {
+        return res;
+    }
+
+    GranuleDataType granule1 = GetGranule(granule1Index);
+    GranuleDataType granule2 = GetGranule(granule2Index);
+    
+    float3 relativePoint = average_position-granule1.position;
+    float3 relativeVelocity = granule1.velocity+cross(granule1.angularVelocity,relativePoint);
+    float3 normal = normalize(granule1.position-granule2.position);
+    if(dot(relativeVelocity,normal)>0)
+    {
+        return res;
+    }
+
+    float3 v_normal = dot(relativeVelocity,normal)*normal;
+    float3 v_tangent = relativeVelocity-v_normal;
+    float a = max(0,1-_FrictionCoefficient*(1+_RestitutionCoefficient)*length(v_normal)/length(v_tangent));
+    float3 v_new_normal = -_RestitutionCoefficient*v_normal;
+    float3 v_new_tangent = a*v_tangent;
+    float3 v_new = v_new_normal+v_new_tangent;
+
+    float3x3 RriStarMatrix=getCrossMatrix(relativePoint);
+    float3x3 InertiaReferenceTensorInv = float3x3(1/_GranuleInertiaReferenceTensor[0][0],0,0,
+                                                  0,1/_GranuleInertiaReferenceTensor[1][1],0,
+                                                  0,0,1/_GranuleInertiaReferenceTensor[2][2]);
+    float3x3 rotationMatrix = QuaternionToMatrix(granule1.quaternion);
+    float3x3 InertiaTensorInv = mul(mul(rotationMatrix,InertiaReferenceTensorInv),transpose(rotationMatrix));
+    float3x3 K = float3x3(0.25f/_ParticleMass,0,0,
+                          0,0.25f/_ParticleMass,0,
+                          0,0,0.25f/_ParticleMass)-mul(mul(RriStarMatrix,InertiaTensorInv),RriStarMatrix);
+
+    float3 J = mul(GetMatrixInv(K),v_new-relativeVelocity);
+
+    res.impulse = J;
+    res.position = average_position;
+    
+    return res;
+}
+ImpulseDataType CalculateRigidBodyParticleImpulse(uint granuleIndex,uint rigidBodyParticleIndex)
 {
     ImpulseDataType res;
     res.impulse = float3(0,0,0);
     res.position = float3(0,0,0);
     return res;
 }
-ImpulseDataType CalculateRigidBodyParticleImpluse(uint granuleIndex,uint rigidBodyParticleIndex)
-{
-    ImpulseDataType res;
-    res.impulse = float3(0,0,0);
-    res.position = float3(0,0,0);
-    return res;
-}
-ImpulseDataType CalculatePlaneImpluse(uint granuleIndex,uint planeIndex)
+ImpulseDataType CalculatePlaneImpulse(uint granuleIndex,uint planeIndex)
 {
     ImpulseDataType res;
     res.impulse = float3(0,0,0);

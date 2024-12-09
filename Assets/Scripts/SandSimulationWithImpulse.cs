@@ -141,7 +141,7 @@ public class SandSimulationWithImpulse : MonoBehaviour
         for(int i = 0; i < granuleCount; i++)
         {
             granuleData[i].Position = new Vector3(Random.Range(-3.0f,3.0f), Random.Range(3.0f, 5.0f), Random.Range(-3.0f,3.0f));
-            granuleData[i].Velocity = Vector3.zero;
+            granuleData[i].Velocity = Random.onUnitSphere * 10;
             granuleData[i].AngularVelocity = Vector3.zero;
             granuleData[i].Rotation = Quaternion.identity;
             for(int j = 0; j < 4; j++)
@@ -152,8 +152,8 @@ public class SandSimulationWithImpulse : MonoBehaviour
         }
         
         // //TEST
-        // granuleData[0].Position = new Vector3(0, 4.0f, 0);
-        // granuleData[0].Velocity =new Vector3(0,0,0);
+        /*granuleData[0].Position = new Vector3(0, 5, 0);
+        granuleData[1].Position = new Vector3(0, 3,0);*/
         
         _particlePositionBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
         _particleVelocityBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
