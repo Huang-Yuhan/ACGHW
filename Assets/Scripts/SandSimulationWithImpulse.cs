@@ -77,9 +77,9 @@ public class SandSimulationWithImpulse : MonoBehaviour
     private int _planeDataBufferId;
     private int _planeCountId;
     private int _gridCountBufferId;
-    private int _gridParticleBufferId;
-    private int _gridParticleBeginBufferId;
-    private int _gridParticleEndBufferId;
+    private int _gridGranuleBufferId;
+    private int _gridGranuleBeginBufferId;
+    private int _gridGranuleEndBufferId;
     
     //grid
     private float gridCellSize;
@@ -158,9 +158,9 @@ public class SandSimulationWithImpulse : MonoBehaviour
         _planeDataBufferId = Shader.PropertyToID("_PlaneBuffer");
         _planeCountId = Shader.PropertyToID("_PlaneCount");
         _gridCountBufferId = Shader.PropertyToID("_GridCountBuffer");
-        _gridParticleBufferId = Shader.PropertyToID("_GridParticleBuffer");
-        _gridParticleBeginBufferId = Shader.PropertyToID("_GridParticleBeginBuffer");
-        _gridParticleEndBufferId = Shader.PropertyToID("_GridParticleEndBuffer");
+        _gridGranuleBufferId = Shader.PropertyToID("_GridGranuleBuffer");
+        _gridGranuleBeginBufferId = Shader.PropertyToID("_GridGranuleBeginBuffer");
+        _gridGranuleEndBufferId = Shader.PropertyToID("_GridGranuleEndBuffer");
     }
     
     void SetupSimulation()
@@ -174,7 +174,7 @@ public class SandSimulationWithImpulse : MonoBehaviour
         
                 
         //初始化网格
-        gridCellSize = 3 * sandRadius;
+        gridCellSize = 5 * sandRadius;
         //这里限定我们只在[-5,5]*[0,+inf]*[-5,5]的区域内进行模拟
         gridResolution = new Vector3Int(Mathf.CeilToInt(10 / gridCellSize), Mathf.CeilToInt(10 / gridCellSize), Mathf.CeilToInt(10 / gridCellSize));
         
@@ -190,13 +190,15 @@ public class SandSimulationWithImpulse : MonoBehaviour
             granuleData[i].Velocity = Random.onUnitSphere * 10;
             granuleData[i].AngularVelocity = Vector3.zero;
             granuleData[i].Rotation = Quaternion.identity;
+            granuleData[i+granuleCount]=granuleData[i];
             for(int j = 0; j < 4; j++)
             {
                 particlePositions[i * 4 + j] = granuleData[i].Position + tetrahedronVertices[j] * sandRadius / 2;
-                //更新grid中的信息
-                Vector3Int gridIndex = GetGridCellIndex(particlePositions[i * 4 + j]);
-                gridCount[GetGridCellInex1D(gridIndex)]++;
+
             }
+            //更新grid中的信息
+            Vector3Int gridIndex = GetGridCellIndex(granuleData[i].Position);
+            gridCount[GetGridCellInex1D(gridIndex)]++;
         }
         
         //初始化grid相关buffer

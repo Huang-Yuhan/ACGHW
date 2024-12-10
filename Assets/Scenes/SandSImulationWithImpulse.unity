@@ -472,7 +472,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   material: {fileID: 2100000, guid: d06fcfbfeb9c24345872434c0e466f3c, type: 2}
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
-  sandCount: 1
+  sandCount: 2048
   computeShader: {fileID: 7200000, guid: 529b93092ed74a37a607f401a337500d, type: 3}
   sandRadius: 0.05
   particleMass: 1

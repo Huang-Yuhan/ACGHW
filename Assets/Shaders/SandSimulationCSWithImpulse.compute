@@ -1,8 +1,10 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #define CS_DEBUG
-#define GPU_OPTIMIZE_PARTICLE_COLLISION
+#define GPU_OPTIMIZE_COLLISION
+//#undef GPU_OPTIMIZE_COLLISION
 
-#ifdef GPU_OPTIMIZE_PARTICLE_COLLISION
+#ifdef GPU_OPTIMIZE_COLLISION
+    #pragma kernel GridUpdatePreProcess             //预处理
     #pragma kernel GridUpdateMain
 #endif
 
@@ -54,20 +56,20 @@ RWStructuredBuffer<float3> _ParticlePositionBuffer;
 RWStructuredBuffer<float3> _ParticleVelocityBuffer;
 RWStructuredBuffer<GranuleDataType> _GranuleBuffer;             //所有的buffer都实际扩大了一倍，分别用于存储当前时刻和下一时刻的数据
 
-#ifdef GPU_OPTIMIZE_PARTICLE_COLLISION
+#ifdef GPU_OPTIMIZE_COLLISION
     //grid
-    //这里针对的对象是particle，不是granule
+    //这里针对的对象可以是granule?
     RWStructuredBuffer<int> _GridCountBuffer;                       //这个只需要初始化的时候全盘扫，后面就可以动态更新了
-    RWStructuredBuffer<int> _GridParticleBuffer;                    //实际存储下标的列表buffer
-    RWStructuredBuffer<int> _GridParticleBeginBuffer;               //存储每个格子的粒子在_GridParticleBuffer中的开始位置
-    RWStructuredBuffer<int> _GridParticleEndBuffer;                 //存储每个格子的粒子在_GridParticleBuffer中的结束位置
+    RWStructuredBuffer<int> _GridGranuleBuffer;                    //实际存储下标的列表buffer
+    RWStructuredBuffer<int> _GridGranuleBeginBuffer;               //存储每个格子的粒子在_GridGranuleBuffer中的开始位置
+    RWStructuredBuffer<int> _GridGranuleEndBuffer;                 //存储每个格子的粒子在_GridGranuleBuffer中的结束位置
 
-    static const int3 gridOffset[26] = {
+    static const int3 gridOffset[27] = {
         int3(-1,-1,-1),int3(-1,-1,0),int3(-1,-1,1),
         int3(-1,0,-1),int3(-1,0,0),int3(-1,0,1),
         int3(-1,1,-1),int3(-1,1,0),int3(-1,1,1),
         int3(0,-1,-1),int3(0,-1,0),int3(0,-1,1),
-        int3(0,0,-1),int3(0,0,1),                                       //这里不需要加上(0,0,0)
+        int3(0,0,-1),int3(0,0,1),int3(0,0,0),
         int3(0,1,-1),int3(0,1,0),int3(0,1,1),
         int3(1,-1,-1),int3(1,-1,0),int3(1,-1,1),
         int3(1,0,-1),int3(1,0,0),int3(1,0,1),
@@ -77,6 +79,7 @@ RWStructuredBuffer<GranuleDataType> _GranuleBuffer;             //所有的buffe
     uint3 _GridResolution;
     float _GridCellSize;
 
+    void GridUpdatePreProcess();
     void GridUpdateMain();
     int3 GetGridIndex(float3 position)
     {
@@ -268,6 +271,22 @@ void UpdateGranule(uint granuleIndex)
         res.angularVelocity = float3(0,0,0);
         res.quaternion = float4(0,0,0,1);
     }*/
+
+    #ifdef GPU_OPTIMIZE_COLLISION
+        //检查是否需要更新gridCount
+        float3 nowGranulePosition = res.position;
+        float3 previousGranulePosition = granule.position;
+        uint3 nowGridIndex = GetGridIndex(nowGranulePosition);
+        uint3 previousGridIndex = GetGridIndex(previousGranulePosition);
+        uint nowGridIndex1D = GetGridIndex1D(nowGridIndex);
+        uint previousGridIndex1D = GetGridIndex1D(previousGridIndex);
+        if(nowGridIndex1D!=previousGridIndex1D)
+        {
+            InterlockedAdd(_GridCountBuffer[nowGridIndex1D],1);
+            InterlockedAdd(_GridCountBuffer[previousGridIndex1D],-1);
+        }
+    #endif
+    
     
     SetGranule(granuleIndex,res);
 
@@ -350,13 +369,31 @@ GranuleDataType SolveCollision(uint granuleIndex)                //在里面进�
         _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].angularVelocity = res.angularVelocity;
     }
 
-    #ifdef GPU_OPTIMIZE_PARTICLE_COLLISION
+    #ifdef GPU_OPTIMIZE_COLLISION
 
-        //得到granule在哪个格子中(因为gridCellSize是3倍的粒子半径，所以不可能存在一个granule在某个轴上跨越3个及以上的格子)
+        //得到granule在哪个格子中(因为gridCellSize是5倍的粒子半径，所以不可能存在一个granule在某个轴上跨越3个及以上的格子)
         float3 granulePosition = res.position;
         uint3 gridIndex = GetGridIndex(granulePosition);
-        uint gridIndex1D = GetGridIndex1D(gridIndex);
-        //可能要重新考虑下下面的实现，改为granule->particle而不是granule->granule
+        //枚举格子中的granule
+        for(int i=0;i<27;i++)
+        {
+            uint3 gridIndexOffset = gridIndex+gridOffset[i];
+            if(gridIndexOffset.x<0||gridIndexOffset.y<0||gridIndexOffset.z<0||gridIndexOffset.x>=_GridResolution.x||gridIndexOffset.y>=_GridResolution.y||gridIndexOffset.z>=_GridResolution.z)
+            {
+                continue;
+            }
+            int gridIndex1D = GetGridIndex1D(gridIndexOffset);
+            int begin = _GridGranuleBeginBuffer[gridIndex1D];
+            int end = _GridGranuleEndBuffer[gridIndex1D];
+            for(int j=begin;j<end;j++)
+            {
+                ImpulseDataType impulse = CalculateGranuleImpulse(granuleIndex,_GridGranuleBuffer[j]);
+                res.velocity += impulse.impulse/_ParticleMass/4;
+                _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].velocity = res.velocity;
+                res.angularVelocity += mul(InertiaTensorInv,cross(impulse.position-res.position,impulse.impulse));
+                _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].angularVelocity = res.angularVelocity;
+            }
+        }
     
     #else
         //计算Granule之间的碰撞
@@ -577,9 +614,18 @@ ImpulseDataType CalculatePlaneImpulse(uint granuleIndex,uint planeIndex)
     return res;
 }
 
+#ifdef GPU_OPTIMIZE_COLLISION
 
 [numthreads(1,1,1)]
-void GridUpdateMain(uint3 particleIndex : SV_DispatchThreadID)
+void GridUpdatePreProcess(uint3 id:SV_DispatchThreadID)
 {
 
 }
+
+[numthreads(1,1,1)]
+void GridUpdateMain(uint3 id : SV_DispatchThreadID)
+{
+
+}
+
+#endif
