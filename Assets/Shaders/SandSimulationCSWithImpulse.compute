@@ -218,7 +218,7 @@ float3  getParticleOffset(uint particleIndex)
     return tetrahedron[particleIndex%4]*_ParticleRadius;
 }
 
-[numthreads(64,1,1)]
+[numthreads(32,1,1)]
 void CSMain (uint3 granuleIndex : SV_DispatchThreadID)
 {
     Simulation(granuleIndex);
@@ -663,7 +663,7 @@ void GridUpdateMain(uint3 id : SV_DispatchThreadID)
     
 }
 
-[numthreads(64,1,1)]
+[numthreads(32,1,1)]
 void GranuleDataSetIntoGrid(uint3 granuleIndex : SV_DispatchThreadID)
 {
     if(granuleIndex.x>=(uint)_GranuleCount)

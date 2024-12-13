@@ -95,6 +95,20 @@ public class SandSimulationWithImpulse : MonoBehaviour
     //grid
     private float gridCellSize;
     private Vector3Int gridResolution;
+    /*int[] gridCount = new int[gridResolution.x * gridResolution.y * gridResolution.z];
+    int[] gridParticle = new int[particleCount];
+    int[] gridParticleBegin = new int[gridResolution.x * gridResolution.y * gridResolution.z];
+    int[] gridParticleCurrent = new int[gridResolution.x * gridResolution.y * gridResolution.z];
+    int[] gridParticleEnd = new int[gridResolution.x * gridResolution.y * gridResolution.z];
+    int[] columnSum = new int[gridResolution.y * gridResolution.z];
+    int[] prefixSum = new int[gridResolution.y * gridResolution.z];*/
+    private int[] gridCount;
+    private int[] gridParticle;
+    private int[] gridParticleBegin;
+    private int[] gridParticleCurrent;
+    private int[] gridParticleEnd;
+    private int[] columnSum;
+    private int[] prefixSum;
     
     
     struct GranuleDataType
@@ -196,13 +210,15 @@ public class SandSimulationWithImpulse : MonoBehaviour
         gridCellSize = 5 * sandRadius;
         //这里限定我们只在[-5,5]*[0,+inf]*[-5,5]的区域内进行模拟
         gridResolution = new Vector3Int(Mathf.CeilToInt(10 / gridCellSize), Mathf.CeilToInt(10 / gridCellSize), Mathf.CeilToInt(10 / gridCellSize));
-        
-        int[] gridCount = new int[gridResolution.x * gridResolution.y * gridResolution.z];
-        int[] gridParticle = new int[particleCount];
-        int[] gridParticleBegin = new int[gridResolution.x * gridResolution.y * gridResolution.z];
-        int[] gridParticleEnd = new int[gridResolution.x * gridResolution.y * gridResolution.z];
-        int[] columnSum = new int[gridResolution.y * gridResolution.z];
-        int[] prefixSum = new int[gridResolution.y * gridResolution.z];
+        //初始化grid相关数据
+        gridCount = new int[gridResolution.x * gridResolution.y * gridResolution.z];
+        gridParticle = new int[particleCount];
+        gridParticleBegin = new int[gridResolution.x * gridResolution.y * gridResolution.z];
+        gridParticleCurrent = new int[gridResolution.x * gridResolution.y * gridResolution.z];
+        gridParticleEnd = new int[gridResolution.x * gridResolution.y * gridResolution.z];
+        columnSum = new int[gridResolution.y * gridResolution.z];
+        prefixSum = new int[gridResolution.y * gridResolution.z];
+
         
         _bufferIndexBegin = 0;
         for(int i = 0; i < granuleCount; i++)
@@ -230,6 +246,10 @@ public class SandSimulationWithImpulse : MonoBehaviour
         _gridParticleEndBuffer = new ComputeBuffer(gridParticleEnd.Length, sizeof(int));
         _columnSumBuffer = new ComputeBuffer(columnSum.Length, sizeof(int));
         _prefixSumBuffer = new ComputeBuffer(prefixSum.Length, sizeof(int));
+        
+
+        
+        
         
         
         /*// //TEST
@@ -300,8 +320,6 @@ public class SandSimulationWithImpulse : MonoBehaviour
         computeShader.SetBuffer(_GridUpdatePreProcessKernel, _prefixSumBufferId, _prefixSumBuffer);
         computeShader.Dispatch(_GridUpdatePreProcessKernel, gridResolution.y/8, gridResolution.z/8, 1);
         
-        int[] prefixSum = new int[gridResolution.y * gridResolution.z];
-        int[] columnSum = new int[gridResolution.y * gridResolution.z];
         _columnSumBuffer.GetData(columnSum);
         for(int i=0;i<gridResolution.y * gridResolution.z;i++)
         {
@@ -310,23 +328,6 @@ public class SandSimulationWithImpulse : MonoBehaviour
         }
         _prefixSumBuffer.SetData(prefixSum);
         
-        /*int[] gridCount = new int[gridResolution.x * gridResolution.y * gridResolution.z];
-        _gridCountBuffer.GetData(gridCount);
-        for(int ix = 0; ix < gridResolution.x; ix++)
-        {
-            for(int iy = 0; iy < gridResolution.y; iy++)
-            {
-                for(int iz = 0; iz < gridResolution.z; iz++)
-                {
-                    int index = ix + iy * gridResolution.x + iz * gridResolution.x * gridResolution.y;
-                    if (gridCount[index] > 0)
-                    {
-                        Debug.LogFormat("gridCount[{0},{1},{2}]: {3}", ix, iy, iz, gridCount[index]);
-                    }
-                }
-            }
-        }
-        Debug.Log("\n");*/
         
         computeShader.SetBuffer(_GridUpdateMainKernel, _gridCountBufferId, _gridCountBuffer);
         computeShader.SetBuffer(_GridUpdateMainKernel, _prefixSumBufferId, _prefixSumBuffer);
@@ -342,35 +343,8 @@ public class SandSimulationWithImpulse : MonoBehaviour
         computeShader.SetBuffer(_GranuleDataSetIntoGridKernel,_gridGranuleEndBufferId, _gridParticleEndBuffer);
         computeShader.SetBuffer(_GranuleDataSetIntoGridKernel,_gridGranuleBufferId, _gridParticleBuffer);
         computeShader.SetBuffer(_GranuleDataSetIntoGridKernel,_gridGranuleCurrentBufferId, _gridParticleCurrentBuffer);
-        computeShader.Dispatch(_GranuleDataSetIntoGridKernel, Mathf.Max(1,granuleCount/64), 1, 1);
+        computeShader.Dispatch(_GranuleDataSetIntoGridKernel, Mathf.Max(1,granuleCount/32), 1, 1);
         
-        int[] gridGranuleBegin = new int[gridResolution.x * gridResolution.y * gridResolution.z];
-        int[] gridGranuleEnd = new int[gridResolution.x * gridResolution.y * gridResolution.z];
-        int[] gridGranuleCurrent = new int[gridResolution.x * gridResolution.y * gridResolution.z];
-        int[] gridGranule = new int[granuleCount];
-        _gridParticleBeginBuffer.GetData(gridGranuleBegin);
-        _gridParticleEndBuffer.GetData(gridGranuleEnd);
-        _gridParticleBuffer.GetData(gridGranule);
-        _gridParticleCurrentBuffer.GetData(gridGranuleCurrent);
-        
-        /*for(int ix = 0; ix < gridResolution.x; ix++)
-        {
-            for(int iy = 0; iy < gridResolution.y; iy++)
-            {
-                for(int iz = 0; iz < gridResolution.z; iz++)
-                {
-                    int index = ix + iy * gridResolution.x + iz * gridResolution.x * gridResolution.y;
-                    if (gridGranuleBegin[index] != gridGranuleEnd[index])
-                    {
-                        Debug.LogFormat("gridGranuleBegin[{0},{1},{2}]: {3}, gridGranuleEnd[{0},{1},{2}]: {4},gridGranuleCurrent[{0},{1},{2}]: {5}", ix, iy, iz, gridGranuleBegin[index], gridGranuleEnd[index], gridGranuleCurrent[index]);
-                        for(int i = gridGranuleBegin[index]; i < gridGranuleEnd[index]; i++)
-                        {
-                            Debug.LogFormat("gridGranule[{0}]: {1}", i, gridGranule[i]);
-                        }
-                    }
-                }
-            }
-        }*/
         
         
     }
@@ -406,7 +380,7 @@ public class SandSimulationWithImpulse : MonoBehaviour
         computeShader.SetFloat(_gridCellSizeId, gridCellSize);
         
         
-        computeShader.Dispatch(_kernel, Math.Max(1, granuleCount / 64), 1, 1);                          //进行物理模拟
+        computeShader.Dispatch(_kernel, Math.Max(1, granuleCount / 32), 1, 1);                          //进行物理模拟
         
         GridUpdate();
         
