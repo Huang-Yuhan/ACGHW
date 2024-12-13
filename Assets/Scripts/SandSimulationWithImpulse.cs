@@ -95,13 +95,7 @@ public class SandSimulationWithImpulse : MonoBehaviour
     //grid
     private float gridCellSize;
     private Vector3Int gridResolution;
-    /*int[] gridCount = new int[gridResolution.x * gridResolution.y * gridResolution.z];
-    int[] gridParticle = new int[particleCount];
-    int[] gridParticleBegin = new int[gridResolution.x * gridResolution.y * gridResolution.z];
-    int[] gridParticleCurrent = new int[gridResolution.x * gridResolution.y * gridResolution.z];
-    int[] gridParticleEnd = new int[gridResolution.x * gridResolution.y * gridResolution.z];
-    int[] columnSum = new int[gridResolution.y * gridResolution.z];
-    int[] prefixSum = new int[gridResolution.y * gridResolution.z];*/
+
     private int[] gridCount;
     private int[] gridParticle;
     private int[] gridParticleBegin;

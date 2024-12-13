@@ -11,6 +11,7 @@
 
 #pragma kernel CSMain
 
+#undef CS_DEBUG
 
 #ifdef CS_DEBUG
 
