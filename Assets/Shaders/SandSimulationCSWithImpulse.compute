@@ -6,6 +6,7 @@
 #ifdef GPU_OPTIMIZE_COLLISION
     #pragma kernel GridUpdatePreProcess             //预处理
     #pragma kernel GridUpdateMain
+    #pragma kernel GranuleDataSetIntoGrid
 #endif
 
 #pragma kernel CSMain
@@ -62,6 +63,7 @@ RWStructuredBuffer<GranuleDataType> _GranuleBuffer;             //所有的buffe
     RWStructuredBuffer<int> _GridCountBuffer;                       //这个只需要初始化的时候全盘扫，后面就可以动态更新了
     RWStructuredBuffer<int> _GridGranuleBuffer;                    //实际存储下标的列表buffer
     RWStructuredBuffer<int> _GridGranuleBeginBuffer;               //存储每个格子的粒子在_GridGranuleBuffer中的开始位置
+    RWStructuredBuffer<int> _GridGranuleCurrentBuffer;             //存储每个格子的粒子在_GridGranuleBuffer中的当前位置
     RWStructuredBuffer<int> _GridGranuleEndBuffer;                 //存储每个格子的粒子在_GridGranuleBuffer中的结束位置
 
     static const int3 gridOffset[27] = {
@@ -76,11 +78,12 @@ RWStructuredBuffer<GranuleDataType> _GranuleBuffer;             //所有的buffe
         int3(1,1,-1),int3(1,1,0),int3(1,1,1)
     };
 
-    uint3 _GridResolution;
+    uint4 _GridResolution;
     float _GridCellSize;
 
     void GridUpdatePreProcess();
     void GridUpdateMain();
+    void GranuleDataSetIntoGrid();
     int3 GetGridIndex(float3 position)
     {
         static const float3 start= float3(-5,0,-5);
@@ -422,10 +425,12 @@ float3 GetAveragePosition(uint granuleIndex1,uint granuleIndex2)
     float average_mass = 0;
     float3 average_position = float3(0,0,0);
 
+    [unroll]
     for(int i=0;i<4;i++)
     {
         uint particleIndex1 = firstParticleIndex1+i;
 
+        [unroll]
         for(int j=0;j<4;j++)
         {
             uint particleIndex2 = firstParticleIndex2+j;
@@ -616,16 +621,62 @@ ImpulseDataType CalculatePlaneImpulse(uint granuleIndex,uint planeIndex)
 
 #ifdef GPU_OPTIMIZE_COLLISION
 
-[numthreads(1,1,1)]
+RWStructuredBuffer<uint> _ColumnSumBuffer;                //对于每一个(y,z)对，存储在x方向上的前缀和
+RWStructuredBuffer<uint> _PrefixSumBuffer;                //对于每一个(y,z)对，存储二维数组的前缀和
+
+[numthreads(8,8,1)]
 void GridUpdatePreProcess(uint3 id:SV_DispatchThreadID)
 {
+    uint3 gridIndex = uint3(0,id.x,id.y);
+    uint gridIndex1D = GetGridIndex1D(gridIndex);
+    uint bufferId = id.x+_GridResolution.y*id.y;
+    //计算ColumnSumBuffer
+    uint sum = 0;
+    for(uint i =0;i<_GridResolution.x;i++)
+    {
+        sum+=_GridCountBuffer[bufferId];
+        _ColumnSumBuffer[bufferId] = sum;
+    }
+
+    //前缀和目前放到CPU上计算
+    // if(_PrefixSumBuffer[bufferId-1]!=0)
+    // _PrefixSumBuffer[bufferId] = _PrefixSumBuffer[bufferId-1]+sum;
 
 }
 
-[numthreads(1,1,1)]
+[numthreads(8,8,1)]
 void GridUpdateMain(uint3 id : SV_DispatchThreadID)
 {
+    uint3 gridIndex = uint3(0,id.x,id.y);
+    uint gridIndex1D = GetGridIndex1D(gridIndex);
+    uint bufferId = id.x+_GridResolution.y*id.y;
+    //根据前缀和得到在此之前的格子中的粒子数总数
+    int sum = _PrefixSumBuffer[bufferId];
+    for(int idxOffset=0;idxOffset<_GridResolution.x;idxOffset++)
+    {
+        uint idx = gridIndex1D+idxOffset;
+        _GridGranuleBeginBuffer[idx] = sum;
+        sum+=_GridCountBuffer[idx];
+        _GridGranuleEndBuffer[idx] = sum;
+    }
+    
+}
 
+[numthreads(64,1,1)]
+void GranuleDataSetIntoGrid(uint3 granuleIndex : SV_DispatchThreadID)
+{
+    if(granuleIndex.x>=(uint)_GranuleCount)
+    {
+        return;
+    }
+    
+    GranuleDataType granule = GetGranule(granuleIndex.x);
+    float3 granulePosition = granule.position;
+    uint3 gridIndex = GetGridIndex(granulePosition);
+    uint gridIndex1D = GetGridIndex1D(gridIndex);
+    int current=0;
+    InterlockedAdd(_GridGranuleCurrentBuffer[gridIndex1D],1,current);
+    _GridGranuleBuffer[current]=granuleIndex.x;
 }
 
 #endif
