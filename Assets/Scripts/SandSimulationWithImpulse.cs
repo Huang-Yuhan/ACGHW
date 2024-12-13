@@ -207,7 +207,7 @@ public class SandSimulationWithImpulse : MonoBehaviour
         _bufferIndexBegin = 0;
         for(int i = 0; i < granuleCount; i++)
         {
-            granuleData[i].Position = new Vector3(Random.Range(-3.0f,3.0f), Random.Range(3.0f, 5.0f), Random.Range(-3.0f,3.0f));
+            granuleData[i].Position = new Vector3(Random.Range(-4.0f,4.0f), Random.Range(2.0f, 5.0f), Random.Range(-4.0f,4.0f));
             granuleData[i].Velocity = Random.onUnitSphere * 10;
             granuleData[i].AngularVelocity = Vector3.zero;
             granuleData[i].Rotation = Quaternion.identity;
@@ -226,12 +226,13 @@ public class SandSimulationWithImpulse : MonoBehaviour
         _gridCountBuffer = new ComputeBuffer(gridCount.Length, sizeof(int));
         _gridParticleBuffer = new ComputeBuffer(particleCount, sizeof(int));
         _gridParticleBeginBuffer = new ComputeBuffer(gridParticleBegin.Length, sizeof(int));
+        _gridParticleCurrentBuffer = new ComputeBuffer(gridParticleBegin.Length, sizeof(int));
         _gridParticleEndBuffer = new ComputeBuffer(gridParticleEnd.Length, sizeof(int));
         _columnSumBuffer = new ComputeBuffer(columnSum.Length, sizeof(int));
         _prefixSumBuffer = new ComputeBuffer(prefixSum.Length, sizeof(int));
         
         
-        // //TEST
+        /*// //TEST
         gridCount[GetGridCellInex1D(GetGridCellIndex(granuleData[0].Position))] = 0;
         gridCount[GetGridCellInex1D(GetGridCellIndex(granuleData[1].Position))] = 0;
         granuleData[0].Position = new Vector3(0.5f, 5, 0.5f);
@@ -239,7 +240,7 @@ public class SandSimulationWithImpulse : MonoBehaviour
         granuleData[1].Position = new Vector3(0.5f, 3,0.5f);
         granuleData[1].Velocity = Vector3.zero;
         gridCount[GetGridCellInex1D(GetGridCellIndex(granuleData[0].Position))]++;
-        gridCount[GetGridCellInex1D(GetGridCellIndex(granuleData[1].Position))]++;
+        gridCount[GetGridCellInex1D(GetGridCellIndex(granuleData[1].Position))]++;*/
         
         _particlePositionBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
         _particleVelocityBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
@@ -280,6 +281,7 @@ public class SandSimulationWithImpulse : MonoBehaviour
         _gridCountBuffer?.Release();
         _gridParticleBuffer?.Release();
         _gridParticleBeginBuffer?.Release();
+        _gridParticleCurrentBuffer?.Release();
         _gridParticleEndBuffer?.Release();
         _columnSumBuffer?.Release();
         _prefixSumBuffer?.Release();
@@ -303,12 +305,12 @@ public class SandSimulationWithImpulse : MonoBehaviour
         _columnSumBuffer.GetData(columnSum);
         for(int i=0;i<gridResolution.y * gridResolution.z;i++)
         {
-            prefixSum[i] = columnSum[i];
-            if(i > 0) prefixSum[i] += prefixSum[i - 1];
+            prefixSum[i] = 0;
+            if(i > 0) prefixSum[i] += prefixSum[i - 1]+columnSum[i - 1];
         }
         _prefixSumBuffer.SetData(prefixSum);
         
-        int[] gridCount = new int[gridResolution.x * gridResolution.y * gridResolution.z];
+        /*int[] gridCount = new int[gridResolution.x * gridResolution.y * gridResolution.z];
         _gridCountBuffer.GetData(gridCount);
         for(int ix = 0; ix < gridResolution.x; ix++)
         {
@@ -324,11 +326,12 @@ public class SandSimulationWithImpulse : MonoBehaviour
                 }
             }
         }
-        Debug.Log("\n");
+        Debug.Log("\n");*/
         
         computeShader.SetBuffer(_GridUpdateMainKernel, _gridCountBufferId, _gridCountBuffer);
         computeShader.SetBuffer(_GridUpdateMainKernel, _prefixSumBufferId, _prefixSumBuffer);
         computeShader.SetBuffer(_GridUpdateMainKernel,_gridGranuleBeginBufferId, _gridParticleBeginBuffer);
+        computeShader.SetBuffer(_GridUpdateMainKernel,_gridGranuleCurrentBufferId, _gridParticleCurrentBuffer);
         computeShader.SetBuffer(_GridUpdateMainKernel,_gridGranuleEndBufferId, _gridParticleEndBuffer);
         
         computeShader.Dispatch(_GridUpdateMainKernel, gridResolution.y/8, gridResolution.z/8, 1);
@@ -338,8 +341,37 @@ public class SandSimulationWithImpulse : MonoBehaviour
         computeShader.SetBuffer(_GranuleDataSetIntoGridKernel,_gridGranuleBeginBufferId, _gridParticleBeginBuffer);
         computeShader.SetBuffer(_GranuleDataSetIntoGridKernel,_gridGranuleEndBufferId, _gridParticleEndBuffer);
         computeShader.SetBuffer(_GranuleDataSetIntoGridKernel,_gridGranuleBufferId, _gridParticleBuffer);
-        computeShader.SetBuffer(_GranuleDataSetIntoGridKernel,_gridGranuleCurrentBufferId, _gridParticleBuffer);
+        computeShader.SetBuffer(_GranuleDataSetIntoGridKernel,_gridGranuleCurrentBufferId, _gridParticleCurrentBuffer);
         computeShader.Dispatch(_GranuleDataSetIntoGridKernel, Mathf.Max(1,granuleCount/64), 1, 1);
+        
+        int[] gridGranuleBegin = new int[gridResolution.x * gridResolution.y * gridResolution.z];
+        int[] gridGranuleEnd = new int[gridResolution.x * gridResolution.y * gridResolution.z];
+        int[] gridGranuleCurrent = new int[gridResolution.x * gridResolution.y * gridResolution.z];
+        int[] gridGranule = new int[granuleCount];
+        _gridParticleBeginBuffer.GetData(gridGranuleBegin);
+        _gridParticleEndBuffer.GetData(gridGranuleEnd);
+        _gridParticleBuffer.GetData(gridGranule);
+        _gridParticleCurrentBuffer.GetData(gridGranuleCurrent);
+        
+        /*for(int ix = 0; ix < gridResolution.x; ix++)
+        {
+            for(int iy = 0; iy < gridResolution.y; iy++)
+            {
+                for(int iz = 0; iz < gridResolution.z; iz++)
+                {
+                    int index = ix + iy * gridResolution.x + iz * gridResolution.x * gridResolution.y;
+                    if (gridGranuleBegin[index] != gridGranuleEnd[index])
+                    {
+                        Debug.LogFormat("gridGranuleBegin[{0},{1},{2}]: {3}, gridGranuleEnd[{0},{1},{2}]: {4},gridGranuleCurrent[{0},{1},{2}]: {5}", ix, iy, iz, gridGranuleBegin[index], gridGranuleEnd[index], gridGranuleCurrent[index]);
+                        for(int i = gridGranuleBegin[index]; i < gridGranuleEnd[index]; i++)
+                        {
+                            Debug.LogFormat("gridGranule[{0}]: {1}", i, gridGranule[i]);
+                        }
+                    }
+                }
+            }
+        }*/
+        
         
     }
 

@@ -634,7 +634,7 @@ void GridUpdatePreProcess(uint3 id:SV_DispatchThreadID)
     uint sum = 0;
     for(uint i =0;i<_GridResolution.x;i++)
     {
-        sum+=_GridCountBuffer[bufferId];
+        sum+=_GridCountBuffer[gridIndex1D+i];
         _ColumnSumBuffer[bufferId] = sum;
     }
 
@@ -656,6 +656,7 @@ void GridUpdateMain(uint3 id : SV_DispatchThreadID)
     {
         uint idx = gridIndex1D+idxOffset;
         _GridGranuleBeginBuffer[idx] = sum;
+        _GridGranuleCurrentBuffer[idx] = sum;
         sum+=_GridCountBuffer[idx];
         _GridGranuleEndBuffer[idx] = sum;
     }
