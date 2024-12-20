@@ -185,6 +185,9 @@ public class SandSimulationWithImpulse : MonoBehaviour
         _columnSumBufferId = Shader.PropertyToID("_ColumnSumBuffer");
         _prefixSumBufferId = Shader.PropertyToID("_PrefixSumBuffer");
         _gridCellSizeId = Shader.PropertyToID("_GridCellSize");
+        
+        mesh = GetSphereLowPolyMesh();
+        
     }
     
     void SetupSimulation()
@@ -240,21 +243,6 @@ public class SandSimulationWithImpulse : MonoBehaviour
         _gridParticleEndBuffer = new ComputeBuffer(gridParticleEnd.Length, sizeof(int));
         _columnSumBuffer = new ComputeBuffer(columnSum.Length, sizeof(int));
         _prefixSumBuffer = new ComputeBuffer(prefixSum.Length, sizeof(int));
-        
-
-        
-        
-        
-        
-        /*// //TEST
-        gridCount[GetGridCellInex1D(GetGridCellIndex(granuleData[0].Position))] = 0;
-        gridCount[GetGridCellInex1D(GetGridCellIndex(granuleData[1].Position))] = 0;
-        granuleData[0].Position = new Vector3(0.5f, 5, 0.5f);
-        granuleData[0].Velocity = Vector3.zero;
-        granuleData[1].Position = new Vector3(0.5f, 3,0.5f);
-        granuleData[1].Velocity = Vector3.zero;
-        gridCount[GetGridCellInex1D(GetGridCellIndex(granuleData[0].Position))]++;
-        gridCount[GetGridCellInex1D(GetGridCellIndex(granuleData[1].Position))]++;*/
         
         _particlePositionBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
         _particleVelocityBuffer = new ComputeBuffer(particleCount*2, sizeof(float) * 3);
@@ -442,5 +430,51 @@ public class SandSimulationWithImpulse : MonoBehaviour
         I_ref[3, 3] = 1;                
         Debug.Log("I_ref: " + I_ref);
         return I_ref;
+    }
+
+    Mesh GetSphereLowPolyMesh()
+    {
+        int n = 10;
+        float r = 0.5f;
+        
+        Mesh mesh = new Mesh();
+        //球的一份的弧度
+        float ang = 2 * Mathf.PI / n;
+        //存放球的各个顶点坐标
+        List<Vector3> vers = new List<Vector3>();
+        //存放读取的顶点坐标的顺序
+        List<int> tris = new List<int>();
+        for (int i = 0; i < n/2+1; i++)
+        {
+            float xr = Mathf.Sin(i * ang) * r;
+            float y = Mathf.Cos(i * ang) * r;
+            for (int j = 0; j < n; j++)
+            {
+                float x = Mathf.Sin(j * ang) * xr;
+                float z = Mathf.Cos(j * ang) * xr;
+                vers.Add(new Vector3(x, y, z));
+                if (j==n-1)
+                {
+                    float x0 = Mathf.Sin(0) * xr;
+                    float z0 = Mathf.Cos(0) * xr;
+                    vers.Add(new Vector3(x0, y, z0));
+                }
+                if (i<n/2&&j<n)
+                {
+                    tris.Add(i * (n + 1) + j);
+                    tris.Add(i * (n + 1) + j + 1);
+                    tris.Add((i + 1) * (n + 1) + j);
+                    tris.Add((i + 1) * (n + 1) + j);
+                    tris.Add(i * (n + 1) + j + 1);
+                    tris.Add((i + 1) * (n + 1) + j + 1);
+                }
+            }
+        }
+        //赋值
+        mesh.vertices = vers.ToArray();
+        mesh.triangles = tris.ToArray();
+        mesh.RecalculateNormals();
+        
+       return mesh;
     }
 }
