@@ -1,0 +1,687 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#define GPU_OPTIMIZE_COLLISION
+//#undef GPU_OPTIMIZE_COLLISION
+
+#ifdef GPU_OPTIMIZE_COLLISION
+    #pragma kernel GridUpdatePreProcess             //预处理
+    #pragma kernel GridUpdateMain
+    #pragma kernel GranuleDataSetIntoGrid
+#endif
+
+#pragma kernel CSMain
+#pragma kernel DynamicAddSand
+
+struct GranuleDataType
+{
+    float3 position;
+    float3 velocity;
+    float3 angularVelocity;
+    float4 quaternion;
+};
+
+struct RigidBodyParticleData
+{
+    float3 position;
+};
+
+struct ImpulseDataType
+{
+    float3 position;
+    float3 impulse;
+};
+
+struct PlaneData
+{
+    float3 position;
+    float3 normal;
+};
+
+RWStructuredBuffer<float3> _ParticlePositionBuffer;
+RWStructuredBuffer<float3> _ParticleVelocityBuffer;
+RWStructuredBuffer<GranuleDataType> _GranuleBuffer;             //所有的buffer都实际扩大了一倍，分别用于存储当前时刻和下一时刻的数据
+ConsumeStructuredBuffer<GranuleDataType> _readyToConsumeGranuleBuffer;
+
+#ifdef GPU_OPTIMIZE_COLLISION
+    //grid
+    //这里针对的对象可以是granule?
+    RWStructuredBuffer<int> _GridCountBuffer;                       //这个只需要初始化的时候全盘扫，后面就可以动态更新了
+    RWStructuredBuffer<int> _GridGranuleBuffer;                    //实际存储下标的列表buffer
+    RWStructuredBuffer<int> _GridGranuleBeginBuffer;               //存储每个格子的粒子在_GridGranuleBuffer中的开始位置
+    RWStructuredBuffer<int> _GridGranuleCurrentBuffer;             //存储每个格子的粒子在_GridGranuleBuffer中的当前位置
+    RWStructuredBuffer<int> _GridGranuleEndBuffer;                 //存储每个格子的粒子在_GridGranuleBuffer中的结束位置
+
+    static const int3 gridOffset[27] = {
+        int3(-1,-1,-1),int3(-1,-1,0),int3(-1,-1,1),
+        int3(-1,0,-1),int3(-1,0,0),int3(-1,0,1),
+        int3(-1,1,-1),int3(-1,1,0),int3(-1,1,1),
+        int3(0,-1,-1),int3(0,-1,0),int3(0,-1,1),
+        int3(0,0,-1),int3(0,0,1),int3(0,0,0),
+        int3(0,1,-1),int3(0,1,0),int3(0,1,1),
+        int3(1,-1,-1),int3(1,-1,0),int3(1,-1,1),
+        int3(1,0,-1),int3(1,0,0),int3(1,0,1),
+        int3(1,1,-1),int3(1,1,0),int3(1,1,1)
+    };
+
+    uint4 _GridResolution;
+    float _GridCellSize;
+
+    void GridUpdatePreProcess();
+    void GridUpdateMain();
+    void GranuleDataSetIntoGrid();
+    int3 GetGridIndex(float3 position)
+    {
+        static const float3 start= float3(-5,0,-5);
+        float3 offset = position-start;
+        float3 resFloat = offset/_GridCellSize;
+        //这里的取整是向下取整
+        return uint3(resFloat.x,resFloat.y,resFloat.z);
+    }
+    int GetGridIndex1D(int3 gridIndex)
+    {
+        return gridIndex.x+gridIndex.y*_GridResolution.x+gridIndex.z*_GridResolution.x*_GridResolution.y;
+    }
+
+#endif
+
+StructuredBuffer<RigidBodyParticleData> _RigidBodyParticleBuffer;//用于存储刚体的粒子数据
+StructuredBuffer<PlaneData> _PlaneBuffer;
+float _DeltaTime;
+int _GranuleCount;
+int _MaxGranuleCount;
+int _ParticleCount;
+int _MaxParticleCount;
+int _RigidBodyParticleCount;
+int _PlaneCount;
+float _ParticleMass;
+float _ParticleRadius;
+float _RestitutionCoefficient;
+float _FrictionCoefficient;
+int _ComsumeGranuleCount;
+
+
+float4x4 _GranuleInertiaReferenceTensor;
+
+
+uint _bufferIndexBegin;                             //取值为0或1，表示当前时刻的数据存储在buffer的前半部分还是后半部分
+
+float3 GetParticlePosition(uint particleIndex)
+{
+    return _ParticlePositionBuffer[particleIndex+_bufferIndexBegin*_MaxParticleCount];
+}
+float3 GetParticleVelocity(uint particleIndex)
+{
+    return _ParticleVelocityBuffer[particleIndex+_bufferIndexBegin*_MaxParticleCount];
+}
+GranuleDataType GetGranule(uint granuleIndex)
+{
+    return _GranuleBuffer[granuleIndex+_bufferIndexBegin*_MaxGranuleCount];
+}
+void SetParticlePosition(uint particleIndex,float3 position)
+{
+    _ParticlePositionBuffer[particleIndex+(1-_bufferIndexBegin)*_MaxParticleCount] = position;
+}
+void SetParticleVelocity(uint particleIndex,float3 velocity)
+{
+    _ParticleVelocityBuffer[particleIndex+(1-_bufferIndexBegin)*_MaxParticleCount] = velocity;
+}
+void SetGranule(uint granuleIndex,GranuleDataType granule)
+{
+    _GranuleBuffer[granuleIndex+(1-_bufferIndexBegin)*_MaxGranuleCount] = granule;
+}
+uint GetNowGranuleIndex(uint granuleIndex)//返回当前正在使用的granule的索引
+{
+    return granuleIndex+_bufferIndexBegin*_MaxGranuleCount;
+}
+
+float4 quaternionMul(float4 q1,float4 q2)
+{
+    float4 result;
+    float s1 = q1.x;
+    float s2 = q2.x;
+    float3 v1 = q1.yzw;
+    float3 v2 = q2.yzw;
+
+    result.x = s1*s2-dot(v1,v2);
+    result.yzw = s1*v2+s2*v1+cross(v1,v2);
+    
+    return result;
+}
+
+float3x3 getCrossMatrix(float3 v)
+{
+    return float3x3(0,-v.z,v.y,
+                    v.z,0,-v.x,
+                    -v.y,v.x,0);
+}
+
+float3x3 GetMatrixInv(float3x3 mat)
+{
+    float3x3 res;
+    float det = mat[0][0]*mat[1][1]*mat[2][2]+mat[0][1]*mat[1][2]*mat[2][0]+mat[0][2]*mat[1][0]*mat[2][1]
+                -mat[0][2]*mat[1][1]*mat[2][0]-mat[0][1]*mat[1][0]*mat[2][2]-mat[0][0]*mat[1][2]*mat[2][1];
+    float3x3 mat_transpose = transpose(mat);
+    res[0][0] = (mat_transpose[1][1]*mat_transpose[2][2]-mat_transpose[1][2]*mat_transpose[2][1])/det;
+    res[0][1] = (mat_transpose[0][2]*mat_transpose[2][1]-mat_transpose[0][1]*mat_transpose[2][2])/det;
+    res[0][2] = (mat_transpose[0][1]*mat_transpose[1][2]-mat_transpose[0][2]*mat_transpose[1][1])/det;
+    res[1][0] = (mat_transpose[1][2]*mat_transpose[2][0]-mat_transpose[1][0]*mat_transpose[2][2])/det;
+    res[1][1] = (mat_transpose[0][0]*mat_transpose[2][2]-mat_transpose[0][2]*mat_transpose[2][0])/det;
+    res[1][2] = (mat_transpose[0][2]*mat_transpose[1][0]-mat_transpose[0][0]*mat_transpose[1][2])/det;
+    res[2][0] = (mat_transpose[1][0]*mat_transpose[2][1]-mat_transpose[1][1]*mat_transpose[2][0])/det;
+    res[2][1] = (mat_transpose[0][1]*mat_transpose[2][0]-mat_transpose[0][0]*mat_transpose[2][1])/det;
+    res[2][2] = (mat_transpose[0][0]*mat_transpose[1][1]-mat_transpose[0][1]*mat_transpose[1][0])/det;
+    return res;
+}
+
+static const float3 tetrahedron[4] = {                        
+    float3(1,0,-1/sqrt(2)),
+    float3(-1,0,-1/sqrt(2)),
+    float3(0,1,1/sqrt(2)),
+    float3(0,-1,1/sqrt(2))
+};
+
+static const float3 g = float3(0,-9.8,0);
+
+void CSMain();
+void Simulation(uint3 granuleIndex : SV_DispatchThreadID);
+void UpdateParticle(uint particleIndex);
+void UpdateGranule(uint granuleIndex);
+float3x3 QuaternionToMatrix(float4 quaternion);
+GranuleDataType SolveCollision(uint granuleIndex);             //在里面进行碰撞检测和碰撞处理
+ImpulseDataType CalculateGranuleImpulse(uint granule1Index,uint granule2Index);
+ImpulseDataType CalculateRigidBodyParticleImpulse(uint granuleIndex,uint rigidBodyParticleIndex);
+ImpulseDataType CalculatePlaneImpulse(uint granuleIndex,uint planeIndex);
+
+inline uint GetGranuleIndex(uint particleIndex)
+{
+    return particleIndex/4;
+}
+inline uint GetFirstParticleIndex(uint granuleIndex)
+{
+    return granuleIndex*4;
+}
+
+float3  getParticleOffset(uint particleIndex)
+{
+    return tetrahedron[particleIndex%4]*_ParticleRadius;
+}
+
+[numthreads(32,1,1)]
+void CSMain (uint3 granuleIndex : SV_DispatchThreadID)
+{
+    Simulation(granuleIndex);
+}
+
+void Simulation(uint3 granuleIndex : SV_DispatchThreadID)
+{
+
+    UpdateGranule(granuleIndex.x);
+}
+
+void UpdateGranule(uint granuleIndex)
+{
+    if(granuleIndex>=(uint)_GranuleCount)
+    {
+        return;
+    }
+    
+    
+    uint firstParticleIndex = GetFirstParticleIndex(granuleIndex);
+
+    GranuleDataType granule = GetGranule(granuleIndex);
+
+    float3 granulePosition = granule.position;
+    float3 granuleVelocity = granule.velocity;
+    float3 granuleAngularVelocity = granule.angularVelocity;
+    float4 granuleQuaternion = granule.quaternion;
+    
+    GranuleDataType res = SolveCollision(granuleIndex);
+
+    res.velocity = res.velocity*0.99;
+    res.angularVelocity = res.angularVelocity*0.99;
+
+    res.position += res.velocity*_DeltaTime;
+    float3 temp = granuleAngularVelocity*_DeltaTime/2;
+    res.quaternion = quaternionMul(float4(0,temp),res.quaternion)+res.quaternion;
+    res.quaternion = normalize(res.quaternion);
+
+    /*
+    if(isnan(res.position.x))
+    {
+        res.position = float3(0,5,0);
+        res.velocity = float3(0,0,0);
+        res.angularVelocity = float3(0,0,0);
+        res.quaternion = float4(0,0,0,1);
+    }*/
+
+    #ifdef GPU_OPTIMIZE_COLLISION
+        //检查是否需要更新gridCount
+        float3 nowGranulePosition = res.position;
+        float3 previousGranulePosition = granule.position;
+        uint3 nowGridIndex = GetGridIndex(nowGranulePosition);
+        uint3 previousGridIndex = GetGridIndex(previousGranulePosition);
+        uint nowGridIndex1D = GetGridIndex1D(nowGridIndex);
+        uint previousGridIndex1D = GetGridIndex1D(previousGridIndex);
+        if(nowGridIndex1D!=previousGridIndex1D)
+        {
+            InterlockedAdd(_GridCountBuffer[nowGridIndex1D],1);
+            InterlockedAdd(_GridCountBuffer[previousGridIndex1D],-1);
+        }
+    #endif
+    
+    
+    SetGranule(granuleIndex,res);
+
+
+    
+    
+    UpdateParticle(firstParticleIndex);
+    UpdateParticle(firstParticleIndex+1);
+    UpdateParticle(firstParticleIndex+2);
+    UpdateParticle(firstParticleIndex+3);
+}
+
+void UpdateParticle(uint particleIndex)
+{
+    //根据granule的位置和速度，计算particle的位置和速度
+    uint granuleIndex = GetGranuleIndex(particleIndex);
+    GranuleDataType granule = _GranuleBuffer[granuleIndex+(1-_bufferIndexBegin)*_MaxGranuleCount];                         //这里需要用到计算后的数据，所以不能用GetGranule函数
+    float3 granulePosition = granule.position;
+    float3 granuleVelocity = granule.velocity;
+    float3 granuleAngularVelocity = granule.angularVelocity;
+    float4 granuleQuaternion = granule.quaternion;
+    float3x3 granuleRotationMatrix = QuaternionToMatrix(granuleQuaternion);
+    float3 particlePosition = granulePosition + mul(granuleRotationMatrix,getParticleOffset(particleIndex));
+    float3 particleVelocity = granuleVelocity + cross(granuleAngularVelocity,particlePosition-granulePosition);
+
+    /*_ParticlePositionBuffer[particleIndex] = particlePosition;
+    _ParticleVelocityBuffer[particleIndex] = particleVelocity;*/
+    SetParticlePosition(particleIndex,particlePosition);
+    SetParticleVelocity(particleIndex,particleVelocity);
+}
+
+float3x3 QuaternionToMatrix(float4 quaternion)
+{
+    float3x3 result;
+    float s= quaternion.x;
+    float3 v = quaternion.yzw;
+    result[0][0] = 1-2*v.y*v.y-2*v.z*v.z;
+    result[0][1] = 2*v.x*v.y-2*s*v.z;
+    result[0][2] = 2*v.x*v.z+2*s*v.y;
+    result[1][0] = 2*v.x*v.y+2*s*v.z;
+    result[1][1] = 1-2*v.x*v.x-2*v.z*v.z;
+    result[1][2] = 2*v.y*v.z-2*s*v.x;
+    result[2][0] = 2*v.x*v.z-2*s*v.y;
+    result[2][1] = 2*v.y*v.z+2*s*v.x;
+    result[2][2] = 1-2*v.x*v.x-2*v.y*v.y;
+    return result;
+}
+
+
+GranuleDataType SolveCollision(uint granuleIndex)                //在里面进行碰撞检测和碰撞处理
+{
+    GranuleDataType res = GetGranule(granuleIndex);
+
+    res.velocity = res.velocity+g*_DeltaTime;
+
+    _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].velocity = res.velocity;
+    
+
+    float3x3 granuleRotationMatrix = QuaternionToMatrix(res.quaternion);
+    float3x3 InertiaReferenceTensorInv = float3x3(1/_GranuleInertiaReferenceTensor[0][0],0,0,
+                                                  0,1/_GranuleInertiaReferenceTensor[1][1],0,
+                                                  0,0,1/_GranuleInertiaReferenceTensor[2][2]);
+    float3x3 InertiaTensorInv = mul(mul(granuleRotationMatrix,InertiaReferenceTensorInv),transpose(granuleRotationMatrix));
+
+
+
+    
+    //计算平面的碰撞
+    for(int i_plane=0;i_plane<_PlaneCount;i_plane++)
+    {
+        ImpulseDataType impulse = CalculatePlaneImpulse(granuleIndex,i_plane);
+        res.velocity += impulse.impulse/_ParticleMass/4;
+        _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].velocity = res.velocity;
+        res.angularVelocity += mul(InertiaTensorInv,cross(impulse.position-res.position,impulse.impulse));
+        _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].angularVelocity = res.angularVelocity;
+    }
+
+    #ifdef GPU_OPTIMIZE_COLLISION
+
+        //得到granule在哪个格子中(因为gridCellSize是5倍的粒子半径，所以不可能存在一个granule在某个轴上跨越3个及以上的格子)
+        float3 granulePosition = res.position;
+        uint3 gridIndex = GetGridIndex(granulePosition);
+        //枚举格子中的granule
+        for(int i=0;i<27;i++)
+        {
+            uint3 gridIndexOffset = gridIndex+gridOffset[i];
+            if(gridIndexOffset.x<0||gridIndexOffset.y<0||gridIndexOffset.z<0||gridIndexOffset.x>=_GridResolution.x||gridIndexOffset.y>=_GridResolution.y||gridIndexOffset.z>=_GridResolution.z)
+            {
+                continue;
+            }
+            int gridIndex1D = GetGridIndex1D(gridIndexOffset);
+            int begin = _GridGranuleBeginBuffer[gridIndex1D];
+            int end = _GridGranuleEndBuffer[gridIndex1D];
+            for(int j=begin;j<end;j++)
+            {
+                ImpulseDataType impulse = CalculateGranuleImpulse(granuleIndex,_GridGranuleBuffer[j]);
+                res.velocity += impulse.impulse/_ParticleMass/4;
+                _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].velocity = res.velocity;
+                res.angularVelocity += mul(InertiaTensorInv,cross(impulse.position-res.position,impulse.impulse));
+                _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].angularVelocity = res.angularVelocity;
+            }
+        }
+    
+    #else
+        //计算Granule之间的碰撞
+        for(int i=0;i<_GranuleCount;i++)
+        {
+            ImpulseDataType impulse = CalculateGranuleImpulse(granuleIndex,i);
+            res.velocity += impulse.impulse/_ParticleMass/4;
+            _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].velocity = res.velocity;
+            res.angularVelocity += mul(InertiaTensorInv,cross(impulse.position-res.position,impulse.impulse));
+            _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].angularVelocity = res.angularVelocity;
+        }
+    #endif  
+    
+    
+    return res;
+}
+
+float3 GetAveragePosition(uint granuleIndex1,uint granuleIndex2)
+{
+    uint firstParticleIndex1 = GetFirstParticleIndex(granuleIndex1);
+    uint firstParticleIndex2 = GetFirstParticleIndex(granuleIndex2);
+
+    GranuleDataType granule1 = GetGranule(granuleIndex1);
+    GranuleDataType granule2 = GetGranule(granuleIndex2);
+    
+    float average_mass = 0;
+    float3 average_position = float3(0,0,0);
+
+    [unroll]
+    for(int i=0;i<4;i++)
+    {
+        uint particleIndex1 = firstParticleIndex1+i;
+
+        [unroll]
+        for(int j=0;j<4;j++)
+        {
+            uint particleIndex2 = firstParticleIndex2+j;
+            float3 particlePosition1 = GetParticlePosition(particleIndex1);
+            float3 particlePosition2 = GetParticlePosition(particleIndex2);
+
+            float dis = length(particlePosition1-particlePosition2);
+            if(dis-2*_ParticleRadius<0)           //说明球体与球体相交
+            {
+                //将其转换为球体和平面相交的情况
+                float3 pointOnPlane = (particlePosition1+particlePosition2)/2;
+                float3 planeNormal = normalize(particlePosition1-particlePosition2);
+
+                float alpha = acos(clamp(dis/2/_ParticleRadius,-1,1));
+                float dm = (1-cos(alpha))*_ParticleMass/2;
+                float ydm = -_ParticleRadius/4*sin(alpha)*sin(alpha)*_ParticleMass;
+                average_mass+=dm;
+                average_position+=dm*(pointOnPlane+planeNormal*ydm);
+            
+            }
+        }
+        
+
+        
+    }
+
+    if(average_mass==0)
+    {
+        return float3(0,0,0);
+    }
+    else 
+    {
+        return average_position/average_mass;
+    }
+}
+
+ImpulseDataType CalculateGranuleImpulse(uint granule1Index,uint granule2Index)
+{
+    ImpulseDataType res;
+    res.impulse = float3(0,0,0);
+    res.position = float3(0,0,0);
+
+    if(granule1Index==granule2Index)
+    {
+        return res;
+    }
+
+    float3 average_position = GetAveragePosition(granule1Index,granule2Index);
+
+    if(average_position.x==0&&average_position.y==0&&average_position.z==0)
+    {
+        return res;
+    }
+
+    GranuleDataType granule1 = GetGranule(granule1Index);
+    GranuleDataType granule2 = GetGranule(granule2Index);
+    
+    float3 relativePoint = average_position-granule1.position;
+    float3 relativeVelocity = granule1.velocity+cross(granule1.angularVelocity,relativePoint);
+    float3 normal = normalize(granule1.position-granule2.position);
+    if(dot(relativeVelocity,normal)>0)
+    {
+        return res;
+    }
+
+    float3 v_normal = dot(relativeVelocity,normal)*normal;
+    float3 v_tangent = relativeVelocity-v_normal;
+    float a=0;
+    if(length(v_tangent)==0)
+    {
+        a = 0;
+    }
+    else
+    {
+        a = max(0,1-_FrictionCoefficient*(1+_RestitutionCoefficient)*length(v_normal)/length(v_tangent));
+    }
+    float3 v_new_normal = -_RestitutionCoefficient*v_normal;
+    float3 v_new_tangent = a*v_tangent;
+    float3 v_new = v_new_normal+v_new_tangent;
+
+    float3x3 RriStarMatrix=getCrossMatrix(relativePoint);
+    float3x3 InertiaReferenceTensorInv = float3x3(1/_GranuleInertiaReferenceTensor[0][0],0,0,
+                                                  0,1/_GranuleInertiaReferenceTensor[1][1],0,
+                                                  0,0,1/_GranuleInertiaReferenceTensor[2][2]);
+    float3x3 rotationMatrix = QuaternionToMatrix(granule1.quaternion);
+    float3x3 InertiaTensorInv = mul(mul(rotationMatrix,InertiaReferenceTensorInv),transpose(rotationMatrix));
+    float3x3 K = float3x3(0.25f/_ParticleMass,0,0,
+                          0,0.25f/_ParticleMass,0,
+                          0,0,0.25f/_ParticleMass)-mul(mul(RriStarMatrix,InertiaTensorInv),RriStarMatrix);
+
+    float3 J = mul(GetMatrixInv(K),v_new-relativeVelocity);
+
+    res.impulse = J;
+    res.position = average_position;
+    
+    return res;
+}
+ImpulseDataType CalculateRigidBodyParticleImpulse(uint granuleIndex,uint rigidBodyParticleIndex)
+{
+    ImpulseDataType res;
+    res.impulse = float3(0,0,0);
+    res.position = float3(0,0,0);
+    return res;
+}
+ImpulseDataType CalculatePlaneImpulse(uint granuleIndex,uint planeIndex)
+{
+    ImpulseDataType res;
+    res.impulse = float3(0,0,0);
+    res.position = float3(0,0,0);
+    
+    uint firstParticleIndex = GetFirstParticleIndex(granuleIndex);
+    GranuleDataType granule = GetGranule(granuleIndex);
+    float dis=0;
+    float3 pointOnPlane = _PlaneBuffer[planeIndex].position;
+    float3 planeNormal = _PlaneBuffer[planeIndex].normal;
+
+    //计算粒子到平面的距离
+
+    float average_mass = 0;
+    float3 average_position = float3(0,0,0);
+    
+    for(int i=0;i<4;i++)
+    {
+        float3 particlePosition = GetParticlePosition(firstParticleIndex+i);
+        dis = dot(particlePosition-pointOnPlane,planeNormal);
+        float3 particleProjectionOnPlane = particlePosition-dis*planeNormal;
+        if(dis-_ParticleRadius<0)           //说明球体与平面相交
+        {
+            float alpha = acos(clamp(dis/_ParticleRadius,-1,1));
+            float dm = (1-cos(alpha))*_ParticleMass/2;
+            float ydm = -_ParticleRadius/4*sin(alpha)*sin(alpha)*_ParticleMass;
+            average_mass+=dm;
+            average_position+=dm*(particlePosition+planeNormal*ydm);
+        }
+    }
+    if(average_mass==0)
+    {
+        return res;
+    }
+    
+    average_position/=average_mass;
+    
+    
+    float3 relativePoint = average_position-granule.position;
+    float3 relativeVelocity = granule.velocity+cross(granule.angularVelocity,relativePoint);
+
+    if(dot(relativeVelocity,planeNormal)>0)
+    {
+        return res;
+    }
+
+    float3 v_normal = dot(relativeVelocity,planeNormal)*planeNormal;
+    float3 v_tangent = relativeVelocity-v_normal;
+    float a =0;
+    //判断v_tangent是否为0
+    if(length(v_tangent)==0)
+    {
+        a = 0;
+    }
+    else
+    {
+        a = max(0,1-_FrictionCoefficient*(1+_RestitutionCoefficient)*length(v_normal)/length(v_tangent));
+    }
+    float3 v_new_normal = -_RestitutionCoefficient*v_normal;
+    float3 v_new_tangent = a*v_tangent;
+    float3 v_new = v_new_normal+v_new_tangent;
+
+    float3x3 RriStarMatrix=getCrossMatrix(relativePoint);
+    float3x3 InertiaReferenceTensorInv = float3x3(1/_GranuleInertiaReferenceTensor[0][0],0,0,
+                                                  0,1/_GranuleInertiaReferenceTensor[1][1],0,
+                                                  0,0,1/_GranuleInertiaReferenceTensor[2][2]);
+    float3x3 rotationMatrix = QuaternionToMatrix(granule.quaternion);
+    float3x3 InertiaTensorInv = mul(mul(rotationMatrix,InertiaReferenceTensorInv),transpose(rotationMatrix));
+    float3x3 K = float3x3(0.25f/_ParticleMass,0,0,
+                          0,0.25f/_ParticleMass,0,
+                          0,0,0.25f/_ParticleMass)-mul(mul(RriStarMatrix,InertiaTensorInv),RriStarMatrix);
+
+    float3 J = mul(GetMatrixInv(K),v_new-relativeVelocity);
+
+    
+    res.impulse = J;
+    res.position = average_position;
+    return res;
+}
+
+#ifdef GPU_OPTIMIZE_COLLISION
+
+RWStructuredBuffer<uint> _ColumnSumBuffer;                //对于每一个(y,z)对，存储在x方向上的前缀和
+RWStructuredBuffer<uint> _PrefixSumBuffer;                //对于每一个(y,z)对，存储二维数组的前缀和
+
+[numthreads(8,8,1)]
+void GridUpdatePreProcess(uint3 id:SV_DispatchThreadID)
+{
+    uint3 gridIndex = uint3(0,id.x,id.y);
+    uint gridIndex1D = GetGridIndex1D(gridIndex);
+    uint bufferId = id.x+_GridResolution.y*id.y;
+    //计算ColumnSumBuffer
+    uint sum = 0;
+    for(uint i =0;i<_GridResolution.x;i++)
+    {
+        sum+=_GridCountBuffer[gridIndex1D+i];
+        _ColumnSumBuffer[bufferId] = sum;
+    }
+
+    //前缀和目前放到CPU上计算
+    // if(_PrefixSumBuffer[bufferId-1]!=0)
+    // _PrefixSumBuffer[bufferId] = _PrefixSumBuffer[bufferId-1]+sum;
+
+}
+
+[numthreads(8,8,1)]
+void GridUpdateMain(uint3 id : SV_DispatchThreadID)
+{
+    uint3 gridIndex = uint3(0,id.x,id.y);
+    uint gridIndex1D = GetGridIndex1D(gridIndex);
+    uint bufferId = id.x+_GridResolution.y*id.y;
+    //根据前缀和得到在此之前的格子中的粒子数总数
+    int sum = _PrefixSumBuffer[bufferId];
+    for(int idxOffset=0;idxOffset<_GridResolution.x;idxOffset++)
+    {
+        uint idx = gridIndex1D+idxOffset;
+        _GridGranuleBeginBuffer[idx] = sum;
+        _GridGranuleCurrentBuffer[idx] = sum;
+        sum+=_GridCountBuffer[idx];
+        _GridGranuleEndBuffer[idx] = sum;
+    }
+    
+}
+
+[numthreads(32,1,1)]
+void GranuleDataSetIntoGrid(uint3 granuleIndex : SV_DispatchThreadID)
+{
+    if(granuleIndex.x>=(uint)_GranuleCount)
+    {
+        return;
+    }
+    
+    GranuleDataType granule = GetGranule(granuleIndex.x);
+    float3 granulePosition = granule.position;
+    uint3 gridIndex = GetGridIndex(granulePosition);
+    uint gridIndex1D = GetGridIndex1D(gridIndex);
+    int current=0;
+    InterlockedAdd(_GridGranuleCurrentBuffer[gridIndex1D],1,current);
+    _GridGranuleBuffer[current]=granuleIndex.x;
+}
+
+#endif
+
+[numthreads(32,1,1)]
+void DynamicAddSand(uint3 id : SV_DispatchThreadID)
+{
+    //判断是否有数据
+    if(id.x>=_ComsumeGranuleCount)
+    {
+        return;
+    }
+    //从readyToConsumeGranuleBuffer中取出数据
+    GranuleDataType granule = _readyToConsumeGranuleBuffer.Consume();
+    //将数据写入到_GranuleBuffer中
+    int index=id.x+_GranuleCount;
+    _GranuleBuffer[index]=granule;
+    _GranuleBuffer[index+_MaxGranuleCount]=granule;
+    int partilceIndex = index*4;
+    //设置Particle的位置和速度
+    [unroll]
+    for(int i=0;i<4;i++)
+    {
+        float3 offset = tetrahedron[i]*_ParticleRadius/2;
+        float3 pos = granule.position+offset;
+        float3 vel = granule.velocity+cross(granule.angularVelocity,offset);
+        _ParticlePositionBuffer[partilceIndex+i]=pos;
+        _ParticleVelocityBuffer[partilceIndex+i]=vel;
+        _ParticlePositionBuffer[partilceIndex+i+_MaxParticleCount]=pos;
+        _ParticleVelocityBuffer[partilceIndex+i+_MaxParticleCount]=vel;
+    }
+
+    /*int3 gridIndex = GetGridIndex(granule.position);
+    int gridIndex1D = GetGridIndex1D(gridIndex);
+    InterlockedAdd(_GridCountBuffer[gridIndex1D],1);*/
+    
+}

@@ -589,9 +589,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 756179831}
-  - component: {fileID: 756179832}
-  - component: {fileID: 756179833}
   - component: {fileID: 756179834}
+  - component: {fileID: 756179835}
+  - component: {fileID: 756179836}
   m_Layer: 0
   m_Name: SandSimulation
   m_TagString: Untagged
@@ -614,7 +614,40 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &756179832
+--- !u!114 &756179834
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 756179829}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 505c679efd5a04644a1c9bf4678af9aa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &756179835
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 756179829}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9fab26a61a9137342a67639c588a8217, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  material: {fileID: 2100000, guid: d06fcfbfeb9c24345872434c0e466f3c, type: 2}
+  mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
+  maxSandCount: 1
+  computeShader: {fileID: 7200000, guid: 73574c122f9350643b41c167d3174a9b, type: 3}
+  sandRadius: 0.05
+  particleMass: 1
+  restitutionCoefficient: 0.5
+  frictionCoefficient: 0.3
+  deltaTime: 0.02
+--- !u!114 &756179836
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -628,40 +661,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   material: {fileID: 2100000, guid: 80854b9704a84b6488b25abf58d60b32, type: 2}
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
---- !u!114 &756179833
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 756179829}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: af29a3d827e45914ebb3ef1219d56be9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  material: {fileID: 2100000, guid: d06fcfbfeb9c24345872434c0e466f3c, type: 2}
-  mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
-  sandCount: 16384
-  computeShader: {fileID: 7200000, guid: 529b93092ed74a37a607f401a337500d, type: 3}
-  sandRadius: 0.05
-  particleMass: 1
-  restitutionCoefficient: 0.5
-  frictionCoefficient: 0.3
-  deltaTime: 0.02
-  isStopCompute: 0
---- !u!114 &756179834
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 756179829}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 505c679efd5a04644a1c9bf4678af9aa, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1 &770998243
 GameObject:
   m_ObjectHideFlags: 0
