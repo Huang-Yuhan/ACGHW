@@ -98,7 +98,7 @@ public class DynamicAddSand : MonoBehaviour
     private int _columnSumBufferId;
     private int _prefixSumBufferId;
     private int _gridCellSizeId;
-    private int _ComsumeGranuleCountId;
+    private int _ConsumeGranuleCountId;
     
     //grid
     private float gridCellSize;
@@ -183,7 +183,7 @@ public class DynamicAddSand : MonoBehaviour
         _columnSumBufferId = Shader.PropertyToID("_ColumnSumBuffer");
         _prefixSumBufferId = Shader.PropertyToID("_PrefixSumBuffer");
         _gridCellSizeId = Shader.PropertyToID("_GridCellSize");
-        _ComsumeGranuleCountId = Shader.PropertyToID("_ConsumeGranuleCount");
+        _ConsumeGranuleCountId = Shader.PropertyToID("_ConsumeGranuleCount");
         
         mesh = GetSphereLowPolyMesh();
         
@@ -311,7 +311,7 @@ public class DynamicAddSand : MonoBehaviour
         computeShader.SetBuffer(_GranuleDataSetIntoGridKernel,_gridGranuleEndBufferId, _gridParticleEndBuffer);
         computeShader.SetBuffer(_GranuleDataSetIntoGridKernel,_gridGranuleBufferId, _gridParticleBuffer);
         computeShader.SetBuffer(_GranuleDataSetIntoGridKernel,_gridGranuleCurrentBufferId, _gridParticleCurrentBuffer);
-        computeShader.Dispatch(_GranuleDataSetIntoGridKernel, Mathf.Max(1,currentGranuleCount/32), 1, 1);
+        computeShader.Dispatch(_GranuleDataSetIntoGridKernel, Mathf.CeilToInt(currentGranuleCount/32f), 1, 1);
         
         
         
@@ -320,13 +320,15 @@ public class DynamicAddSand : MonoBehaviour
     private void FixedUpdate()
     {
         
-        
         //进行动态添加沙粒
-        if(Time.time - lastAddTime > 1f)
+        if(Time.time - lastAddTime > 0.1f)
         {
             lastAddTime = Time.time;
             AddSandStep();
         }
+        
+        if (currentSandCount == 0) return;
+
         
         computeShader.SetBuffer(_kernel, _particlePositionBufferId, _particlePositionBuffer);
         computeShader.SetBuffer(_kernel, _particleVelocityBufferId, _particleVelocityBuffer);
@@ -357,28 +359,11 @@ public class DynamicAddSand : MonoBehaviour
         computeShader.SetFloat(_gridCellSizeId, gridCellSize);
         
         
-        computeShader.Dispatch(_kernel, Math.Max(1, currentGranuleCount / 32), 1, 1);                          //进行物理模拟
+        computeShader.Dispatch(_kernel,Mathf.CeilToInt(currentGranuleCount/32f) , 1, 1);                          //进行物理模拟
         
         GridUpdate();
         
         _bufferIndexBegin = 1 - _bufferIndexBegin;
-        
-        
-        
-        GranuleDataType[] granuleData = new GranuleDataType[currentGranuleCount];
-        _granuleDataBuffer.GetData(granuleData);
-        for (int i = 0; i < currentGranuleCount; i++)
-        {
-            Debug.LogFormat("granule {0} position:{1}", i, granuleData[i].Position);
-        }
-        
-        Vector3[] particlePositions = new Vector3[currentParticleCount];
-        _particlePositionBuffer.GetData(particlePositions);
-        for (int i = 0; i < currentParticleCount; i++)
-        {
-            Debug.LogFormat("particle {0} position:{1}", i, particlePositions[i]);
-        }
-        
         
     }
 
@@ -481,7 +466,7 @@ public class DynamicAddSand : MonoBehaviour
         _comsumeGranuleBuffer.SetCounterValue(0);
         _comsumeGranuleBuffer.SetData(granuleDataList);
         _comsumeGranuleBuffer.SetCounterValue((uint)granuleDataList.Count);
-        computeShader.SetInt(_ComsumeGranuleCountId, granuleDataList.Count);
+        computeShader.SetInt(_ConsumeGranuleCountId, granuleDataList.Count);
         computeShader.SetBuffer(_ComsumeGranuleKernel, "_readyToConsumeGranuleBuffer", _comsumeGranuleBuffer);
         computeShader.SetBuffer(_ComsumeGranuleKernel, _granuleDataBufferId, _granuleDataBuffer);
         computeShader.SetInt(_granuleCountId, currentGranuleCount);
@@ -489,7 +474,10 @@ public class DynamicAddSand : MonoBehaviour
         computeShader.SetFloat(_particleRadiusId, sandRadius);
         computeShader.SetBuffer(_ComsumeGranuleKernel,_particlePositionBufferId, _particlePositionBuffer);
         computeShader.SetBuffer(_ComsumeGranuleKernel,_particleVelocityBufferId, _particleVelocityBuffer);
-        computeShader.Dispatch(_ComsumeGranuleKernel, Mathf.Max(1, granuleDataList.Count / 32), 1, 1);
+        computeShader.SetBuffer(_ComsumeGranuleKernel,_gridCountBufferId, _gridCountBuffer);
+        computeShader.SetVector(_gridResolutionId, new Vector4(gridResolution.x, gridResolution.y, gridResolution.z, 0));
+        computeShader.SetFloat(_gridCellSizeId, gridCellSize);
+        computeShader.Dispatch(_ComsumeGranuleKernel, Mathf.CeilToInt(granuleDataList.Count/32f), 1, 1);
         currentSandCount += granuleDataList.Count;
         granuleDataList.Clear();
     }

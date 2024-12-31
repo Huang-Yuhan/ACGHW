@@ -96,7 +96,7 @@ float _ParticleMass;
 float _ParticleRadius;
 float _RestitutionCoefficient;
 float _FrictionCoefficient;
-int _ComsumeGranuleCount;
+int _ConsumeGranuleCount;
 
 
 float4x4 _GranuleInertiaReferenceTensor;
@@ -652,11 +652,12 @@ void GranuleDataSetIntoGrid(uint3 granuleIndex : SV_DispatchThreadID)
 
 #endif
 
+
 [numthreads(32,1,1)]
 void DynamicAddSand(uint3 id : SV_DispatchThreadID)
 {
     //判断是否有数据
-    if(id.x>=_ComsumeGranuleCount)
+    if(id.x>=_ConsumeGranuleCount)
     {
         return;
     }
@@ -680,8 +681,8 @@ void DynamicAddSand(uint3 id : SV_DispatchThreadID)
         _ParticleVelocityBuffer[partilceIndex+i+_MaxParticleCount]=vel;
     }
 
-    /*int3 gridIndex = GetGridIndex(granule.position);
+    int3 gridIndex = GetGridIndex(granule.position);
     int gridIndex1D = GetGridIndex1D(gridIndex);
-    InterlockedAdd(_GridCountBuffer[gridIndex1D],1);*/
+    InterlockedAdd(_GridCountBuffer[gridIndex1D],1);
     
 }
