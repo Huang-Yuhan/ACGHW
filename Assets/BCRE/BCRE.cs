@@ -7,7 +7,7 @@ using Random = UnityEngine.Random;
 
 
 
-public class ThreeDSandPainting : MonoBehaviour
+public class BCRE : MonoBehaviour
 {
     [Tooltip("实例化沙子的材质")]
     public Material material; 
@@ -55,7 +55,6 @@ public class ThreeDSandPainting : MonoBehaviour
     private int _ComsumeGranuleKernel;
     private ComputeBuffer _particlePositionBuffer;
     private ComputeBuffer _particleVelocityBuffer;
-    private ComputeBuffer _particleColorBuffer;
     private ComputeBuffer _granuleDataBuffer;
     private ComputeBuffer _gridCountBuffer;                                                  //记录每个格子中的粒子数量
     private ComputeBuffer _gridParticleBuffer;                                               //记录每个粒子所在的格子索引,每个grid中的粒子索引在该buffer中是连续的，通过_gridParticleBeginBuffer和_gridParticleEndBuffer可以找到每个格子中的粒子索引范围
@@ -74,7 +73,6 @@ public class ThreeDSandPainting : MonoBehaviour
     //ids
     private int _particlePositionBufferId;
     private int _particleVelocityBufferId;
-    private int _particleColorBufferId;
     private int _granuleDataBufferId;
     private int _granuleCountId;
     private int _maxGranuleCountId;
@@ -117,7 +115,7 @@ public class ThreeDSandPainting : MonoBehaviour
     //dynamic add sand
     
     
-    float lastTime = 0;
+    float lastAddTime = 0;
     List<GranuleDataType> granuleDataList = new List<GranuleDataType>();
     
     struct GranuleDataType
@@ -126,10 +124,9 @@ public class ThreeDSandPainting : MonoBehaviour
         public Vector3 Velocity;
         public Vector3 AngularVelocity;
         public Quaternion Rotation;
-        public Vector3 Color;
         public static int GetSize()
         {
-            return sizeof(float) * 3 * 4 + sizeof(float) * 4;
+            return sizeof(float) * 3 * 3 + sizeof(float) * 4;
         }
     }
     
@@ -187,9 +184,6 @@ public class ThreeDSandPainting : MonoBehaviour
         _prefixSumBufferId = Shader.PropertyToID("_PrefixSumBuffer");
         _gridCellSizeId = Shader.PropertyToID("_GridCellSize");
         _ConsumeGranuleCountId = Shader.PropertyToID("_ConsumeGranuleCount");
-        _particleColorBufferId = Shader.PropertyToID("_ParticleColorBuffer");
-        
-        //mesh = GetSphereLowPolyMesh();
         
     }
     
@@ -235,7 +229,6 @@ public class ThreeDSandPainting : MonoBehaviour
         
         _particlePositionBuffer = new ComputeBuffer(maxParticleCount*2, sizeof(float) * 3);
         _particleVelocityBuffer = new ComputeBuffer(maxParticleCount*2, sizeof(float) * 3);
-        _particleColorBuffer = new ComputeBuffer(maxParticleCount, sizeof(float) * 3);
         _granuleDataBuffer = new ComputeBuffer(maxGranuleCount*2, GranuleDataType.GetSize());
         _comsumeGranuleBuffer = new ComputeBuffer(maxGranuleCount, GranuleDataType.GetSize(), ComputeBufferType.Append);
         
@@ -278,7 +271,6 @@ public class ThreeDSandPainting : MonoBehaviour
         _columnSumBuffer?.Release();
         _prefixSumBuffer?.Release();
         _comsumeGranuleBuffer?.Release();
-        _particleColorBuffer?.Release();
     }
 
     private void Start()
@@ -323,22 +315,15 @@ public class ThreeDSandPainting : MonoBehaviour
         
     }
 
-    private Vector3 randomColor;
     private void FixedUpdate()
     {
         
         //进行动态添加沙粒
-        if(Input.GetMouseButton(0) && Time.time - lastTime > 1f)
+        if(Time.time - lastAddTime > 0.5f)
         {
-            lastTime = Time.time;
-            randomColor = new Vector3(Random.Range(0, 1f), Random.Range(0, 1f), Random.Range(0, 1f));
-            AddSandStep(randomColor);
-        }else if(Input.GetMouseButton(1) && Time.time - lastTime > 1f)
-        {
-            lastTime = Time.time;
-            AddSandStep(randomColor);
+            lastAddTime = Time.time;
+            AddSandStep();
         }
-        
         
         if (currentSandCount == 0) return;
 
@@ -383,7 +368,6 @@ public class ThreeDSandPainting : MonoBehaviour
     private void Update()
     {
         material.SetBuffer("_ParticlePositionBuffer", _particlePositionBuffer);//只有_ParticlePositionBuffer需要传递给材质
-        material.SetBuffer("_ParticleColorBuffer", _particleColorBuffer);
         material.SetInt("_BufferBeginIndex", _bufferIndexBegin*maxParticleCount);
         _commandData[0].instanceCount = (uint)currentParticleCount;
         _commandBuffer.SetData(_commandData);
@@ -420,63 +404,15 @@ public class ThreeDSandPainting : MonoBehaviour
         Debug.Log("I_ref: " + I_ref);
         return I_ref;
     }
-
-    Mesh GetSphereLowPolyMesh()
-    {
-        int n = 10;
-        float r = 0.5f;
-        
-        Mesh mesh = new Mesh();
-        //球的一份的弧度
-        float ang = 2 * Mathf.PI / n;
-        //存放球的各个顶点坐标
-        List<Vector3> vers = new List<Vector3>();
-        //存放读取的顶点坐标的顺序
-        List<int> tris = new List<int>();
-        for (int i = 0; i < n/2+1; i++)
-        {
-            float xr = Mathf.Sin(i * ang) * r;
-            float y = Mathf.Cos(i * ang) * r;
-            for (int j = 0; j < n; j++)
-            {
-                float x = Mathf.Sin(j * ang) * xr;
-                float z = Mathf.Cos(j * ang) * xr;
-                vers.Add(new Vector3(x, y, z));
-                if (j==n-1)
-                {
-                    float x0 = Mathf.Sin(0) * xr;
-                    float z0 = Mathf.Cos(0) * xr;
-                    vers.Add(new Vector3(x0, y, z0));
-                }
-                if (i<n/2&&j<n)
-                {
-                    tris.Add(i * (n + 1) + j);
-                    tris.Add(i * (n + 1) + j + 1);
-                    tris.Add((i + 1) * (n + 1) + j);
-                    tris.Add((i + 1) * (n + 1) + j);
-                    tris.Add(i * (n + 1) + j + 1);
-                    tris.Add((i + 1) * (n + 1) + j + 1);
-                }
-            }
-        }
-        //赋值
-        mesh.vertices = vers.ToArray();
-        mesh.triangles = tris.ToArray();
-        mesh.RecalculateNormals();
-        
-       return mesh;
-    }
     
-
-    
-    void AddSandStep(Vector3 color)
+    void AddSandStep()
     {
-        //在[-1.5,1.5]*[0,+inf]*[-1.5,1.5]的区域内随机生成沙粒
-        for (int i = 0; i < 256; i++)
+        for (int i = 0; i < 200; i++)
         {
-            var pos = new Vector3(Random.Range(-1.4f, 1.4f), 5f, Random.Range(-1.4f, 1.4f));
-            AddSand(pos, Random.onUnitSphere, Vector3.zero, Quaternion.identity, color);
+            AddSand(new Vector3(Random.Range(-4, 4), Random.Range(2, 7), Random.Range(-4, 4)), Random.onUnitSphere, Vector3.zero, Quaternion.identity);
         }
+        //AddSand(new Vector3(0,2.5f,0), Random.onUnitSphere, Vector3.zero, Quaternion.identity);
+        
         AddSandInCS();
     }
 
@@ -497,23 +433,21 @@ public class ThreeDSandPainting : MonoBehaviour
         computeShader.SetBuffer(_ComsumeGranuleKernel,_gridCountBufferId, _gridCountBuffer);
         computeShader.SetVector(_gridResolutionId, new Vector4(gridResolution.x, gridResolution.y, gridResolution.z, 0));
         computeShader.SetFloat(_gridCellSizeId, gridCellSize);
-        computeShader.SetBuffer(_ComsumeGranuleKernel,_particleColorBufferId, _particleColorBuffer);
         computeShader.Dispatch(_ComsumeGranuleKernel, Mathf.CeilToInt(granuleDataList.Count/32f), 1, 1);
-        
         currentSandCount += granuleDataList.Count;
+        Debug.Log("currentSandCount: " + currentSandCount);
         granuleDataList.Clear();
     }
     
-    void AddSand(Vector3 position, Vector3 velocity, Vector3 angularVelocity, Quaternion rotation, Vector3 color)
+    void AddSand(Vector3 position, Vector3 velocity, Vector3 angularVelocity, Quaternion rotation)
     {
-        if(currentSandCount >= maxSandCount) return;
+        if(currentSandCount+granuleDataList.Count >= maxSandCount) return;
         granuleDataList.Add(new GranuleDataType()
         {
             Position = position,
             Velocity = velocity,
             AngularVelocity = angularVelocity,
-            Rotation = rotation,
-            Color = color
+            Rotation = rotation
         });
 
     }

@@ -17,7 +17,6 @@ struct GranuleDataType
     float3 velocity;
     float3 angularVelocity;
     float4 quaternion;
-    float3 color;
 };
 
 struct RigidBodyParticleData
@@ -39,7 +38,6 @@ struct PlaneData
 
 RWStructuredBuffer<float3> _ParticlePositionBuffer;
 RWStructuredBuffer<float3> _ParticleVelocityBuffer;
-RWStructuredBuffer<float3> _ParticleColorBuffer;
 RWStructuredBuffer<GranuleDataType> _GranuleBuffer;             //所有的buffer都实际扩大了一倍，分别用于存储当前时刻和下一时刻的数据
 ConsumeStructuredBuffer<GranuleDataType> _readyToConsumeGranuleBuffer;
 
@@ -181,7 +179,7 @@ static const float3 tetrahedron[4] = {
     float3(0,-1,1/sqrt(2))
 };
 
-static const float3 g = float3(0,-2,0);
+static const float3 g = float3(0,-1,0);
 
 void CSMain();
 void Simulation(uint3 granuleIndex : SV_DispatchThreadID);
@@ -238,8 +236,8 @@ void UpdateGranule(uint granuleIndex)
     
     GranuleDataType res = SolveCollision(granuleIndex);
 
-    res.velocity = res.velocity*0.95;
-    res.angularVelocity = res.angularVelocity*0.95;
+    res.velocity = res.velocity*0.99;
+    res.angularVelocity = res.angularVelocity*0.99;
 
     res.position += res.velocity*_DeltaTime;
     float3 temp = granuleAngularVelocity*_DeltaTime/2;
@@ -370,13 +368,6 @@ GranuleDataType SolveCollision(uint granuleIndex)                //在里面进�
                 _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].velocity = res.velocity;
                 res.angularVelocity += mul(InertiaTensorInv,cross(impulse.position-res.position,impulse.impulse));
                 _GranuleBuffer[GetNowGranuleIndex(granuleIndex)].angularVelocity = res.angularVelocity;
-
-                //给对方也施加一个反向的冲量
-                GranuleDataType otherGranule = GetGranule(_GridGranuleBuffer[j]);
-                otherGranule.velocity -= impulse.impulse/_ParticleMass/4;
-                _GranuleBuffer[GetNowGranuleIndex(_GridGranuleBuffer[j])].velocity = otherGranule.velocity;
-                otherGranule.angularVelocity -= mul(InertiaTensorInv,cross(impulse.position-otherGranule.position,impulse.impulse));
-                _GranuleBuffer[GetNowGranuleIndex(_GridGranuleBuffer[j])].angularVelocity = otherGranule.angularVelocity;
             }
         }
     
@@ -470,7 +461,6 @@ ImpulseDataType CalculateGranuleImpulse(uint granule1Index,uint granule2Index)
     GranuleDataType granule1 = GetGranule(granule1Index);
     GranuleDataType granule2 = GetGranule(granule2Index);
     
-    
     float3 relativePoint = average_position-granule1.position;
     float3 relativeVelocity = granule1.velocity+cross(granule1.angularVelocity,relativePoint);
     float3 normal = normalize(granule1.position-granule2.position);
@@ -482,8 +472,6 @@ ImpulseDataType CalculateGranuleImpulse(uint granule1Index,uint granule2Index)
     float3 v_normal = dot(relativeVelocity,normal)*normal;
     float3 v_tangent = relativeVelocity-v_normal;
     float a=0;
-
-    
     if(length(v_tangent)==0)
     {
         a = 0;
@@ -528,9 +516,6 @@ ImpulseDataType CalculatePlaneImpulse(uint granuleIndex,uint planeIndex)
     
     uint firstParticleIndex = GetFirstParticleIndex(granuleIndex);
     GranuleDataType granule = GetGranule(granuleIndex);
-    
-    
-    
     float dis=0;
     float3 pointOnPlane = _PlaneBuffer[planeIndex].position;
     float3 planeNormal = _PlaneBuffer[planeIndex].normal;
@@ -598,12 +583,6 @@ ImpulseDataType CalculatePlaneImpulse(uint granuleIndex,uint planeIndex)
 
     float3 J = mul(GetMatrixInv(K),v_new-relativeVelocity);
 
-    //如果averagepos在平面以内，那么特殊处理，添加一个将其推出平面的冲量
-    /*if(dot(average_position-pointOnPlane,planeNormal)<0)
-    {
-        float3 force = -200*dot(average_position-pointOnPlane,planeNormal)*planeNormal;
-        J+=force;
-    }*/
     
     res.impulse = J;
     res.position = average_position;
@@ -696,12 +675,10 @@ void DynamicAddSand(uint3 id : SV_DispatchThreadID)
         float3 offset = tetrahedron[i]*_ParticleRadius/2;
         float3 pos = granule.position+offset;
         float3 vel = granule.velocity+cross(granule.angularVelocity,offset);
-        float3 color=granule.color;
         _ParticlePositionBuffer[partilceIndex+i]=pos;
         _ParticleVelocityBuffer[partilceIndex+i]=vel;
         _ParticlePositionBuffer[partilceIndex+i+_MaxParticleCount]=pos;
         _ParticleVelocityBuffer[partilceIndex+i+_MaxParticleCount]=vel;
-        _ParticleColorBuffer[partilceIndex+i]=color;
     }
 
     int3 gridIndex = GetGridIndex(granule.position);
