@@ -51,6 +51,7 @@ Shader "Custom/InstanceShader"
                 v2f o;
                 uint cmdID = GetCommandID(0);
                 uint instanceID = GetIndirectInstanceID(svInstanceID);
+                
                 float3 center = _ParticlePositionBuffer[instanceID + _BufferBeginIndex];
                 float4 vertexWolrdPosition = float4(v.vertex.xyz * _Radius*2 + center, 1);               //*2的原因是Mesh球体的半径是0.5，所以要乘以2
                 o.pos = mul(UNITY_MATRIX_VP, vertexWolrdPosition);

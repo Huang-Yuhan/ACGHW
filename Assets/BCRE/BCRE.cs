@@ -53,6 +53,8 @@ public class BCRE : MonoBehaviour
     private int _GridUpdateMainKernel;
     private int _GranuleDataSetIntoGridKernel;
     private int _ComsumeGranuleKernel;
+    private int _UpdateHeightKernel;
+    private int _UpdateGranuleStateKernel;
     private ComputeBuffer _particlePositionBuffer;
     private ComputeBuffer _particleVelocityBuffer;
     private ComputeBuffer _granuleDataBuffer;
@@ -63,7 +65,10 @@ public class BCRE : MonoBehaviour
     private ComputeBuffer _gridParticleEndBuffer;                                            //记录每个格子中的最后一个粒子在_gridParticleBuffer中的索引
     private ComputeBuffer _columnSumBuffer;
     private ComputeBuffer _prefixSumBuffer;
-    private ComputeBuffer _comsumeGranuleBuffer;                                             //用于动态添加沙粒                     
+    private ComputeBuffer _comsumeGranuleBuffer;                                             //用于动态添加沙粒           
+    private ComputeBuffer _heightBuffer;
+    private ComputeBuffer _GranuleStateBuffer;
+    private ComputeBuffer _heightMassBuffer;
     private RenderParams _renderParams;
     private GraphicsBuffer _commandBuffer;
     private GraphicsBuffer.IndirectDrawIndexedArgs[] _commandData;
@@ -99,6 +104,9 @@ public class BCRE : MonoBehaviour
     private int _prefixSumBufferId;
     private int _gridCellSizeId;
     private int _ConsumeGranuleCountId;
+    private int _HeightId;
+    private int _StateBufferId;
+    private int _HeightMassId;
     
     //grid
     private float gridCellSize;
@@ -117,6 +125,9 @@ public class BCRE : MonoBehaviour
     
     float lastAddTime = 0;
     List<GranuleDataType> granuleDataList = new List<GranuleDataType>();
+    
+    //BCRE
+    private int[] emptyList;
     
     struct GranuleDataType
     {
@@ -184,6 +195,9 @@ public class BCRE : MonoBehaviour
         _prefixSumBufferId = Shader.PropertyToID("_PrefixSumBuffer");
         _gridCellSizeId = Shader.PropertyToID("_GridCellSize");
         _ConsumeGranuleCountId = Shader.PropertyToID("_ConsumeGranuleCount");
+        _HeightId = Shader.PropertyToID("height");
+        _StateBufferId = Shader.PropertyToID("_GranuleStateBuffer");
+        _HeightMassId = Shader.PropertyToID("height_mass");
         
     }
     
@@ -194,6 +208,8 @@ public class BCRE : MonoBehaviour
         _GridUpdateMainKernel = computeShader.FindKernel("GridUpdateMain");
         _GranuleDataSetIntoGridKernel = computeShader.FindKernel("GranuleDataSetIntoGrid");
         _ComsumeGranuleKernel = computeShader.FindKernel("DynamicAddSand");
+        _UpdateHeightKernel = computeShader.FindKernel("UpdateHeight");
+        _UpdateGranuleStateKernel = computeShader.FindKernel("UpdateGranuleState");
         Vector3[] particlePositions = new Vector3[maxParticleCount * 2];
         Vector3[] particleVelocities = new Vector3[maxParticleCount*2];
         GranuleDataType[] granuleData = new GranuleDataType[maxGranuleCount*2];
@@ -231,11 +247,21 @@ public class BCRE : MonoBehaviour
         _particleVelocityBuffer = new ComputeBuffer(maxParticleCount*2, sizeof(float) * 3);
         _granuleDataBuffer = new ComputeBuffer(maxGranuleCount*2, GranuleDataType.GetSize());
         _comsumeGranuleBuffer = new ComputeBuffer(maxGranuleCount, GranuleDataType.GetSize(), ComputeBufferType.Append);
+        _heightBuffer = new ComputeBuffer(gridResolution.x*gridResolution.z, sizeof(int));
+        _GranuleStateBuffer = new ComputeBuffer(maxGranuleCount, sizeof(uint));
+        _heightMassBuffer = new ComputeBuffer(gridResolution.x*gridResolution.z, sizeof(int));
+        
+        uint[] states = new uint[maxGranuleCount];
+        for (int i = 0; i < states.Length; i++)
+        {
+            states[i] = 1;
+        }
         
         
         _particlePositionBuffer.SetData(particlePositions);
         _particleVelocityBuffer.SetData(particleVelocities);
         _granuleDataBuffer.SetData(granuleData);
+        _GranuleStateBuffer.SetData(states);
         
 
         _granuleInertiaReferenceTensor = CalculateRefererenceInertiaTensor();
@@ -247,7 +273,9 @@ public class BCRE : MonoBehaviour
         _gridParticleBuffer.SetData(gridParticle);
         _gridParticleBeginBuffer.SetData(gridParticleBegin);
         _gridParticleEndBuffer.SetData(gridParticleEnd);
-        
+
+        emptyList = new int[gridResolution.x * gridResolution.z];
+
 
     }
     
@@ -271,6 +299,9 @@ public class BCRE : MonoBehaviour
         _columnSumBuffer?.Release();
         _prefixSumBuffer?.Release();
         _comsumeGranuleBuffer?.Release();
+        _heightBuffer?.Release();
+        _GranuleStateBuffer?.Release();
+        _heightMassBuffer?.Release();
     }
 
     private void Start()
@@ -339,6 +370,7 @@ public class BCRE : MonoBehaviour
         computeShader.SetBuffer(_kernel, _gridGranuleBeginBufferId, _gridParticleBeginBuffer);
         computeShader.SetBuffer(_kernel, _gridGranuleCurrentBufferId, _gridParticleBuffer);
         computeShader.SetBuffer(_kernel, _gridGranuleEndBufferId, _gridParticleEndBuffer);
+        computeShader.SetBuffer(_kernel,_StateBufferId, _GranuleStateBuffer);
         
         computeShader.SetInt(_granuleCountId, currentGranuleCount);
         computeShader.SetInt(_maxGranuleCountId, maxGranuleCount);
@@ -362,6 +394,32 @@ public class BCRE : MonoBehaviour
         GridUpdate();
         
         _bufferIndexBegin = 1 - _bufferIndexBegin;
+        
+        
+        
+        //进行BCRE相关部分
+        
+        _heightBuffer.SetData(emptyList);
+        _heightMassBuffer.SetData(emptyList);
+        
+        computeShader.SetBuffer(_UpdateHeightKernel, _HeightId, _heightBuffer);
+        computeShader.SetBuffer(_UpdateHeightKernel,_granuleDataBufferId, _granuleDataBuffer);
+        computeShader.SetBuffer(_UpdateHeightKernel, _HeightMassId, _heightMassBuffer);
+        computeShader.SetInt(_maxGranuleCountId, maxGranuleCount);
+        computeShader.SetInt(_bufferIndexBeginId, _bufferIndexBegin);
+        computeShader.SetVector(_gridResolutionId, new Vector4(gridResolution.x, gridResolution.y, gridResolution.z, 0));
+        computeShader.SetFloat(_gridCellSizeId, gridCellSize);
+        computeShader.Dispatch(_UpdateHeightKernel, Mathf.CeilToInt(currentGranuleCount/32f), 1, 1);
+        
+        computeShader.SetBuffer(_UpdateGranuleStateKernel, _StateBufferId, _GranuleStateBuffer);
+        computeShader.SetBuffer(_UpdateGranuleStateKernel, _granuleDataBufferId, _granuleDataBuffer);
+        computeShader.SetBuffer(_UpdateGranuleStateKernel,_HeightMassId, _heightMassBuffer);
+        computeShader.SetBuffer(_UpdateGranuleStateKernel,_HeightId, _heightBuffer);
+        computeShader.SetInt(_maxGranuleCountId, maxGranuleCount);
+        computeShader.SetInt(_bufferIndexBeginId, _bufferIndexBegin);
+        computeShader.SetVector(_gridResolutionId, new Vector4(gridResolution.x, gridResolution.y, gridResolution.z, 0));
+        computeShader.SetFloat(_gridCellSizeId, gridCellSize);
+        computeShader.Dispatch(_UpdateGranuleStateKernel, Mathf.CeilToInt(currentGranuleCount/32f), 1, 1);
         
     }
 
@@ -407,9 +465,9 @@ public class BCRE : MonoBehaviour
     
     void AddSandStep()
     {
-        for (int i = 0; i < 200; i++)
+        for (int i = 0; i < 500; i++)
         {
-            AddSand(new Vector3(Random.Range(-4, 4), Random.Range(2, 7), Random.Range(-4, 4)), Random.onUnitSphere, Vector3.zero, Quaternion.identity);
+            AddSand(new Vector3(Random.Range(-3, 3), Random.Range(2, 7), Random.Range(-3, 3)), Random.onUnitSphere, Vector3.zero, Quaternion.identity);
         }
         //AddSand(new Vector3(0,2.5f,0), Random.onUnitSphere, Vector3.zero, Quaternion.identity);
         
@@ -433,6 +491,7 @@ public class BCRE : MonoBehaviour
         computeShader.SetBuffer(_ComsumeGranuleKernel,_gridCountBufferId, _gridCountBuffer);
         computeShader.SetVector(_gridResolutionId, new Vector4(gridResolution.x, gridResolution.y, gridResolution.z, 0));
         computeShader.SetFloat(_gridCellSizeId, gridCellSize);
+        computeShader.SetBuffer(_ComsumeGranuleKernel,_StateBufferId, _GranuleStateBuffer);
         computeShader.Dispatch(_ComsumeGranuleKernel, Mathf.CeilToInt(granuleDataList.Count/32f), 1, 1);
         currentSandCount += granuleDataList.Count;
         Debug.Log("currentSandCount: " + currentSandCount);

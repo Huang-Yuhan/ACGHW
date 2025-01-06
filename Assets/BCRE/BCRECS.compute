@@ -40,6 +40,9 @@ RWStructuredBuffer<float3> _ParticlePositionBuffer;
 RWStructuredBuffer<float3> _ParticleVelocityBuffer;
 RWStructuredBuffer<GranuleDataType> _GranuleBuffer;             //所有的buffer都实际扩大了一倍，分别用于存储当前时刻和下一时刻的数据
 ConsumeStructuredBuffer<GranuleDataType> _readyToConsumeGranuleBuffer;
+RWStructuredBuffer<uint> _GranuleStateBuffer;                   //粒子的状态，0表示静止，1表示运动
+static const uint granuleStateStatic = 0;
+static const uint granuleStateDynamic = 1;
 
 #ifdef GPU_OPTIMIZE_COLLISION
     //grid
@@ -179,7 +182,7 @@ static const float3 tetrahedron[4] = {
     float3(0,-1,1/sqrt(2))
 };
 
-static const float3 g = float3(0,-1,0);
+static const float3 g = float3(0,-9.8,0);
 
 void CSMain();
 void Simulation(uint3 granuleIndex : SV_DispatchThreadID);
@@ -221,6 +224,15 @@ void UpdateGranule(uint granuleIndex)
 {
     if(granuleIndex>=(uint)_GranuleCount)
     {
+        return;
+    }
+    if(_GranuleStateBuffer[granuleIndex]==granuleStateStatic)
+    {
+        SetGranule(granuleIndex,GetGranule(granuleIndex));
+        UpdateParticle(GetFirstParticleIndex(granuleIndex));
+        UpdateParticle(GetFirstParticleIndex(granuleIndex)+1);
+        UpdateParticle(GetFirstParticleIndex(granuleIndex)+2);
+        UpdateParticle(GetFirstParticleIndex(granuleIndex)+3);
         return;
     }
     
@@ -667,6 +679,7 @@ void DynamicAddSand(uint3 id : SV_DispatchThreadID)
     int index=id.x+_GranuleCount;
     _GranuleBuffer[index]=granule;
     _GranuleBuffer[index+_MaxGranuleCount]=granule;
+    _GranuleStateBuffer[index]=granuleStateDynamic;
     int partilceIndex = index*4;
     //设置Particle的位置和速度
     [unroll]
@@ -685,4 +698,70 @@ void DynamicAddSand(uint3 id : SV_DispatchThreadID)
     int gridIndex1D = GetGridIndex1D(gridIndex);
     InterlockedAdd(_GridCountBuffer[gridIndex1D],1);
     
+}
+
+//BCRE部分
+
+RWStructuredBuffer<int> height;
+RWStructuredBuffer<int> height_mass;
+static const int valueMultiplier = 100000;          //因为原子操作的限制，不能直接存储float
+
+
+int GetHeightIndex(float3 pos)
+{
+    static const float3 start= float3(-5,0,-5);
+    float3 offset = pos-start;
+    float3 resFloat = offset/_GridCellSize;
+    return resFloat.x+resFloat.z*_GridResolution.x;
+}
+
+
+#pragma kernel UpdateHeight
+#pragma kernel UpdateGranuleState
+
+
+[numthreads(32,1,1)]
+void UpdateHeight(uint3 id : SV_DispatchThreadID)           //调用之前记得将height初始化为0
+{
+    if(id.x>=_GranuleCount)
+    {
+        return;
+    }
+    GranuleDataType granule = GetGranule(id.x);
+    float3 position = granule.position;
+    int index = GetHeightIndex(position);
+    int value=position.y*valueMultiplier;
+    InterlockedMax(height[index],value);
+    InterlockedAdd(height_mass[index],1);
+}
+
+static float dynamicRatio = 0.3;
+float GetDynamicLowerestHeight(int index)
+{
+    float absoluteHeight = _ParticleRadius*10;
+    float heightValue= height[index]/valueMultiplier/height_mass[index]*2;
+    float dynamicHeight = height[index] *dynamicRatio;
+    return max(absoluteHeight,dynamicHeight);
+}
+
+[numthreads(32,1,1)]
+void UpdateGranuleState(uint3 id : SV_DispatchThreadID)
+{
+    if(id.x>=_GranuleCount)
+    {
+        return;
+    }
+    GranuleDataType granule = GetGranule(id.x);
+    float3 position = granule.position;
+    int index = GetHeightIndex(position);
+    int value=position.y*valueMultiplier;
+    if(value<GetDynamicLowerestHeight(index))
+    {
+        _GranuleStateBuffer[id.x]=granuleStateStatic;
+    }
+    else
+    {
+        _GranuleStateBuffer[id.x]=granuleStateDynamic;
+    }
+
 }
