@@ -427,6 +427,7 @@ public class BCRE : MonoBehaviour
     {
         material.SetBuffer("_ParticlePositionBuffer", _particlePositionBuffer);//只有_ParticlePositionBuffer需要传递给材质
         material.SetInt("_BufferBeginIndex", _bufferIndexBegin*maxParticleCount);
+        material.SetBuffer(_StateBufferId, _GranuleStateBuffer); //渲染粒子状态
         _commandData[0].instanceCount = (uint)currentParticleCount;
         _commandBuffer.SetData(_commandData);
         Graphics.RenderMeshIndirect(_renderParams, mesh, _commandBuffer, 1);                                                //渲染
@@ -465,9 +466,9 @@ public class BCRE : MonoBehaviour
     
     void AddSandStep()
     {
-        for (int i = 0; i < 500; i++)
+        for (int i = 0; i < 1000; i++)
         {
-            AddSand(new Vector3(Random.Range(-3, 3), Random.Range(2, 7), Random.Range(-3, 3)), Random.onUnitSphere, Vector3.zero, Quaternion.identity);
+            AddSand(new Vector3(Random.Range(-4f, 4f), Random.Range(8.5f, 10), Random.Range(-4f, 4f)), Vector3.zero, Vector3.zero, Quaternion.identity);
         }
         //AddSand(new Vector3(0,2.5f,0), Random.onUnitSphere, Vector3.zero, Quaternion.identity);
         

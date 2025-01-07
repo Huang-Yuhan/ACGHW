@@ -37,6 +37,7 @@ Shader "Custom/InstanceShader"
             
             //ComputeShader中的粒子位置
             StructuredBuffer<float3> _ParticlePositionBuffer;
+            StructuredBuffer<uint> _GranuleStateBuffer;
             int _BufferBeginIndex;
 
             //渲染相关参数
@@ -51,6 +52,16 @@ Shader "Custom/InstanceShader"
                 v2f o;
                 uint cmdID = GetCommandID(0);
                 uint instanceID = GetIndirectInstanceID(svInstanceID);
+
+                uint granuleIndex = instanceID / 4;
+                uint state = _GranuleStateBuffer[granuleIndex];
+                if (state == 0)
+                {
+                    o.pos = float4(999999, 9999999, 999999, 1);
+                    o.worldNormal = float3(0, 0, 0);
+                    o.worldPos = float3(0, 0, 0);
+                    return o;
+                }
                 
                 float3 center = _ParticlePositionBuffer[instanceID + _BufferBeginIndex];
                 float4 vertexWolrdPosition = float4(v.vertex.xyz * _Radius*2 + center, 1);               //*2的原因是Mesh球体的半径是0.5，所以要乘以2

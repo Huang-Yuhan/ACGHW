@@ -77,7 +77,8 @@ static const uint granuleStateDynamic = 1;
         float3 offset = position-start;
         float3 resFloat = offset/_GridCellSize;
         //这里的取整是向下取整
-        return uint3(resFloat.x,resFloat.y,resFloat.z);
+        uint3 res = floor(resFloat);
+        return res;
     }
     int GetGridIndex1D(int3 gridIndex)
     {
@@ -704,7 +705,7 @@ void DynamicAddSand(uint3 id : SV_DispatchThreadID)
 
 RWStructuredBuffer<int> height;
 RWStructuredBuffer<int> height_mass;
-static const int valueMultiplier = 100000;          //因为原子操作的限制，不能直接存储float
+static const uint valueMultiplier = 1000;          //因为原子操作的限制，不能直接存储float
 
 
 int GetHeightIndex(float3 pos)
@@ -712,7 +713,9 @@ int GetHeightIndex(float3 pos)
     static const float3 start= float3(-5,0,-5);
     float3 offset = pos-start;
     float3 resFloat = offset/_GridCellSize;
-    return resFloat.x+resFloat.z*_GridResolution.x;
+    //这里的取整是向下取整
+    uint3 res = floor(resFloat);
+    return res.x+res.z*_GridResolution.x;
 }
 
 
@@ -731,17 +734,23 @@ void UpdateHeight(uint3 id : SV_DispatchThreadID)           //调用之前记得
     float3 position = granule.position;
     int index = GetHeightIndex(position);
     int value=position.y*valueMultiplier;
+    if(length(granule.angularVelocity)<0.01f)
+    {
+        //说明是正在下落的粒子
+        return;
+    }
     InterlockedMax(height[index],value);
     InterlockedAdd(height_mass[index],1);
 }
 
-static float dynamicRatio = 0.3;
-float GetDynamicLowerestHeight(int index)
+static float staticRatio = 0.7;
+int GetDynamicLowerestHeight(int index)
 {
-    float absoluteHeight = _ParticleRadius*10;
-    float heightValue= height[index]/valueMultiplier/height_mass[index]*2;
-    float dynamicHeight = height[index] *dynamicRatio;
-    return max(absoluteHeight,dynamicHeight);
+    if(height_mass[index]<7)return 0;
+    int heightValue= height[index];
+    if(heightValue<valueMultiplier*2)return 0;
+    int dynamicHeight = heightValue *staticRatio;
+    return dynamicHeight;
 }
 
 [numthreads(32,1,1)]
