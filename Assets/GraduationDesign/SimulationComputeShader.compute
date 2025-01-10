@@ -1,0 +1,50 @@
+//--------------基础数据结构定义----------------//
+struct granule_data_type
+{
+    float3 position;
+    float3 velocity;
+    float3 angular_velocity;
+    float4 quaternion;
+};
+
+//--------------Compute Buffer定义----------------//
+RWStructuredBuffer<float3> particle_position_rw_structured_buffer;                                  //粒子位置
+RWStructuredBuffer<float3> particle_velocity_rw_structured_buffer;                                  //粒子速度
+RWStructuredBuffer<granule_data_type> granule_data_rw_structured_buffer;                            //Granule数据
+ConsumeStructuredBuffer<granule_data_type> granule_data_consume_structured_buffer;                  //Granule数据，用于动态添加
+
+//--------------变量定义----------------//
+float delta_time;                                                                                   //时间步长
+int current_granule_count;                                                                          //当前Granule数量
+int max_granule_count;                                                                              //最大Granule数量
+int current_particle_count;                                                                         //当前粒子数量
+int max_particle_count;                                                                             //最大粒子数量
+float particle_mass;                                                                                //粒子质量
+float particle_radius;                                                                              //粒子半径
+int consume_granule_count;                                                                          //消耗Granule数量
+//--------------函数定义----------------//
+uint get_granule_index(uint particle_index);
+uint get_first_particle_index(uint granule_index);
+//--------------常量定义----------------//
+static const int3 grid_offset[27] = {
+    int3(-1,-1,-1),int3(-1,-1,0),int3(-1,-1,1),
+    int3(-1,0,-1),int3(-1,0,0),int3(-1,0,1),
+    int3(-1,1,-1),int3(-1,1,0),int3(-1,1,1),
+    int3(0,-1,-1),int3(0,-1,0),int3(0,-1,1),
+    int3(0,0,-1),int3(0,0,1),int3(0,0,0),
+    int3(0,1,-1),int3(0,1,0),int3(0,1,1),
+    int3(1,-1,-1),int3(1,-1,0),int3(1,-1,1),
+    int3(1,0,-1),int3(1,0,0),int3(1,0,1),
+    int3(1,1,-1),int3(1,1,0),int3(1,1,1)
+};
+static const float3 tetrahedron[4] = {                        
+    float3(1,0,-1/sqrt(2)),
+    float3(-1,0,-1/sqrt(2)),
+    float3(0,1,1/sqrt(2)),
+    float3(0,-1,1/sqrt(2))
+};
+static const float3 g = float3(0,-9.8,0);
+//--------------内核定义----------------//
+
+//--------------函数实现----------------//
+
