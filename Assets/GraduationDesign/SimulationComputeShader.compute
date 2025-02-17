@@ -26,6 +26,7 @@ int consume_granule_count;                                                      
 uint get_granule_index(uint particle_index);
 uint get_first_particle_index(uint granule_index);
 //--------------常量定义----------------//
+//取消常量定义
 static const int3 grid_offset[27] = {
     int3(-1,-1,-1),int3(-1,-1,0),int3(-1,-1,1),
     int3(-1,0,-1),int3(-1,0,0),int3(-1,0,1),
@@ -47,4 +48,11 @@ static const float3 g = float3(0,-9.8,0);
 //--------------内核定义----------------//
 
 //--------------函数实现----------------//
+
+
+
+
+
+//链表改为排序
+//float直接转int比大小
 
