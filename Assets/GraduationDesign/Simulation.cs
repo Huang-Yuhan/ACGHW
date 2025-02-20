@@ -194,10 +194,16 @@ namespace GraduationDesign
             }
             _buffers.Clear();
         }
+        
+        private void ReleaseGraphicsBuffers()
+        {
+            _commandBuffer.Release();
+        }
 
         private void OnDestroy()
         {
             ReleaseComputeBuffers();
+            ReleaseGraphicsBuffers();
         }
 
         void ProcessRender()

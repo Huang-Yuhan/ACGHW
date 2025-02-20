@@ -232,7 +232,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!64 &76951528
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -444,7 +444,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   maxSandCount: 1
-  particleRadius: 0.1
+  particleRadius: 5
   particleMass: 0
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
   cs: {fileID: 7200000, guid: 6131c2b9e45082945adb843b11d37add, type: 3}
