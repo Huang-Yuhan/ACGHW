@@ -1,3 +1,6 @@
+//--------------内核定义----------------//
+#pragma kernel CSMain
+
 //--------------基础数据结构定义----------------//
 struct granule_data_type
 {
@@ -15,16 +18,35 @@ ConsumeStructuredBuffer<granule_data_type> granule_data_consume_structured_buffe
 
 //--------------变量定义----------------//
 float delta_time;                                                                                   //时间步长
-int current_granule_count;                                                                          //当前Granule数量
-int max_granule_count;                                                                              //最大Granule数量
-int current_particle_count;                                                                         //当前粒子数量
-int max_particle_count;                                                                             //最大粒子数量
+uint current_granule_count;                                                                          //当前Granule数量
+uint max_granule_count;                                                                              //最大Granule数量
+uint current_particle_count;                                                                         //当前粒子数量
+uint max_particle_count;                                                                             //最大粒子数量
 float particle_mass;                                                                                //粒子质量
 float particle_radius;                                                                              //粒子半径
-int consume_granule_count;                                                                          //消耗Granule数量
+uint consume_granule_count;                                                                          //消耗Granule数量
+uint buffer_index_begin;                                                                             //缓冲区索引开始,这里主要用于处理双缓冲,值为0或1
 //--------------函数定义----------------//
-uint get_granule_index(uint particle_index);
-uint get_first_particle_index(uint granule_index);
+float3 get_now_particle_position(uint index);
+float3 get_now_particle_velocity(uint index);
+granule_data_type get_now_granule_data(uint index);
+void set_now_particle_position(uint index, float3 position);
+void set_now_particle_velocity(uint index, float3 velocity);
+void set_now_granule_data(uint index, granule_data_type granule_data);
+void set_next_state_particle_position(uint index, float3 position);
+void set_next_state_particle_velocity(uint index, float3 velocity);
+void set_next_state_granule_data(uint index, granule_data_type granule_data);
+uint get_now_particle_index(uint particle_index);
+uint get_now_granule_index(uint granule_index);
+uint get_next_state_particle_index(uint particle_index);
+uint get_next_state_granule_index(uint granule_index);
+uint get_granule_index_of_particle(uint particle_index);
+uint get_first_particle_index_of_granule(uint granule_index);
+float3 get_particle_position_offset(uint particle_index);                                           //获取粒子位置偏移(相对于Granule)
+float3x3 QuaternionToMatrix(float4 quaternion);                                                      //四元数转矩阵
+void Simulation(uint3 granuleIndex : SV_DispatchThreadID);
+void UpdateParticle(uint particleIndex,granule_data_type granule_data);
+void UpdateGranule(uint granuleIndex);
 //--------------常量定义----------------//
 //取消常量定义
 static const int3 grid_offset[27] = {
@@ -45,13 +67,128 @@ static const float3 tetrahedron[4] = {
     float3(0,-1,1/sqrt(2))
 };
 static const float3 g = float3(0,-9.8,0);
-//--------------内核定义----------------//
+
+
 
 //--------------函数实现----------------//
+float3 get_now_particle_position(uint index)
+{
+    return particle_position_rw_structured_buffer[get_now_particle_index(index)];
+}
+float3 get_now_particle_velocity(uint index)
+{
+    return particle_velocity_rw_structured_buffer[get_now_particle_index(index)];
+}
+granule_data_type get_now_granule_data(uint index)
+{
+    return granule_data_rw_structured_buffer[get_now_granule_index(index)];
+}
+void set_now_particle_position(uint index, float3 position)
+{
+    particle_position_rw_structured_buffer[get_now_particle_index(index)]=position;
+}
+void set_now_particle_velocity(uint index, float3 velocity)
+{
+    particle_velocity_rw_structured_buffer[get_now_particle_index(index)]=velocity;
+}
+void set_now_granule_data(uint index, granule_data_type granule_data)
+{
+    granule_data_rw_structured_buffer[get_now_granule_index(index)]=granule_data;
+}
+void set_next_state_particle_position(uint index, float3 position)
+{
+    particle_position_rw_structured_buffer[get_next_state_particle_index(index)]=position;  
+}
+void set_next_state_particle_velocity(uint index, float3 velocity)
+{
+    particle_velocity_rw_structured_buffer[get_next_state_particle_index(index)]=velocity;
+}
+void set_next_state_granule_data(uint index, granule_data_type granule_data)
+{
+    granule_data_rw_structured_buffer[get_next_state_granule_index(index)]=granule_data;
+}
+uint get_now_particle_index(uint particle_index)
+{
+    return particle_index+buffer_index_begin*max_particle_count;
+}
+uint get_now_granule_index(uint granule_index)
+{
+    return granule_index+buffer_index_begin*max_granule_count;
+}
+uint get_next_state_particle_index(uint particle_index)
+{
+    return particle_index+(1-buffer_index_begin)*max_particle_count;
+}
+uint get_next_state_granule_index(uint granule_index)
+{
+    return granule_index+(1-buffer_index_begin)*max_granule_count;
+}
+uint get_granule_index_of_particle(uint particle_index)
+{
+    return particle_index/4;
+}
+uint get_first_particle_index_of_granule(uint granule_index)
+{
+    return granule_index*4;
+}
+float3 get_particle_position_offset(uint particle_index)
+{
+    return tetrahedron[particle_index%4]*particle_radius;
+}
+float3x3 QuaternionToMatrix(float4 quaternion)
+{
+    float3x3 result;
+    float s= quaternion.x;
+    float3 v = quaternion.yzw;
+    result[0][0] = 1-2*v.y*v.y-2*v.z*v.z;
+    result[0][1] = 2*v.x*v.y-2*s*v.z;
+    result[0][2] = 2*v.x*v.z+2*s*v.y;
+    result[1][0] = 2*v.x*v.y+2*s*v.z;
+    result[1][1] = 1-2*v.x*v.x-2*v.z*v.z;
+    result[1][2] = 2*v.y*v.z-2*s*v.x;
+    result[2][0] = 2*v.x*v.z-2*s*v.y;
+    result[2][1] = 2*v.y*v.z+2*s*v.x;
+    result[2][2] = 1-2*v.x*v.x-2*v.y*v.y;
+    return result;
+}
+[numthreads(32,1,1)]
+void CSMain (uint3 granuleIndex : SV_DispatchThreadID)
+{
+    Simulation(granuleIndex);
+}
 
+void Simulation(uint3 granuleIndex : SV_DispatchThreadID)
+{
+    UpdateGranule(granuleIndex.x);
+}
 
+void UpdateGranule(uint granuleIndex)
+{
+    if(granuleIndex>=current_granule_count)
+    {
+        return;
+    }
+    granule_data_type granule_data = get_now_granule_data(granuleIndex);
+    granule_data.position = float3(2*sin(delta_time),1,2*cos(delta_time));
+    uint first_particle_index=get_first_particle_index_of_granule(granuleIndex);
 
+    set_next_state_granule_data(granuleIndex,granule_data);
+    
+    UpdateParticle(first_particle_index,granule_data);
+    UpdateParticle(first_particle_index+1,granule_data);
+    UpdateParticle(first_particle_index+2,granule_data);
+    UpdateParticle(first_particle_index+3,granule_data);
+}
 
+void UpdateParticle(uint particleIndex,granule_data_type granule_data)
+{
+    float3x3 rotation_matrix = QuaternionToMatrix(granule_data.quaternion);
+    float3 particle_position=granule_data.position+mul(rotation_matrix,get_particle_position_offset(particleIndex));
+    float3 particle_velocity=granule_data.velocity+cross(granule_data.angular_velocity,particle_position-granule_data.position);
+
+    set_next_state_particle_position(particleIndex,particle_position);
+    set_next_state_particle_velocity(particleIndex,particle_velocity);
+}
 
 //链表改为排序
 //float直接转int比大小

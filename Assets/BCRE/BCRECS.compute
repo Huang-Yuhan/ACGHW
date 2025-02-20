@@ -185,7 +185,6 @@ static const float3 tetrahedron[4] = {
 
 static const float3 g = float3(0,-9.8,0);
 
-void CSMain();
 void Simulation(uint3 granuleIndex : SV_DispatchThreadID);
 void UpdateParticle(uint particleIndex);
 void UpdateGranule(uint granuleIndex);

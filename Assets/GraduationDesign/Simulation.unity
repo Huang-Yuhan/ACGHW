@@ -414,6 +414,58 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
+--- !u!1 &190869047
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 190869049}
+  - component: {fileID: 190869048}
+  m_Layer: 0
+  m_Name: Simulation
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &190869048
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 190869047}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 27d838a4694cb5a4183f7485a7b8dfe6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maxSandCount: 1
+  particleRadius: 0.1
+  particleMass: 0
+  mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
+  cs: {fileID: 7200000, guid: 6131c2b9e45082945adb843b11d37add, type: 3}
+  isDynamicAdding: 0
+  material: {fileID: 2100000, guid: 1efb0a9e5bd905949ab352e2fa33a023, type: 2}
+  deltaTime: 0.02
+--- !u!4 &190869049
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 190869047}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.119249344, y: 3.8117309, z: -4.283417}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -421,3 +473,4 @@ SceneRoots:
   - {fileID: 64093652}
   - {fileID: 85689296}
   - {fileID: 76951531}
+  - {fileID: 190869049}
