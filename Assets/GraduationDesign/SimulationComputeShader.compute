@@ -170,7 +170,8 @@ void UpdateGranule(uint granuleIndex)
     }
     granule_data_type granule_data = get_now_granule_data(granuleIndex);
     granule_data.velocity=granule_data.velocity+g*delta_time;
-    if(granule_data.position.y<0)granule_data.velocity.y=-granule_data.velocity.y;
+    granule_data.position=granule_data.position+granule_data.velocity*delta_time;
+    if(granule_data.position.y<0&&granule_data.velocity.y<0)granule_data.velocity.y=-granule_data.velocity.y;
     uint first_particle_index=get_first_particle_index_of_granule(granuleIndex);
 
     set_next_state_granule_data(granuleIndex,granule_data);

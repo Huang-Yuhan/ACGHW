@@ -127,7 +127,7 @@ namespace GraduationDesign
             Vector3[] particleVelocity = new Vector3[_buffers["particle_velocity_rw_structured_buffer"].count];
             for (int i = 0; i < granuleData.Length; i++)
             {
-                granuleData[i].Position = Vector3.zero;
+                granuleData[i].Position = new Vector3(0, 5, 0);
                 granuleData[i].Velocity = Vector3.zero;
                 granuleData[i].AngularVelocity = Vector3.zero;
                 granuleData[i].Rotation = Quaternion.identity;
@@ -140,6 +140,11 @@ namespace GraduationDesign
 
             _currentSandCount = maxSandCount;
             _bufferIndexBegin = 0;
+            
+            //---------------设置Buffer Data---------------//
+            _buffers["granule_data_rw_structured_buffer"].SetData(granuleData);
+            _buffers["particle_position_rw_structured_buffer"].SetData(particlePosition);
+            _buffers["particle_velocity_rw_structured_buffer"].SetData(particleVelocity);
             
             //---------------添加参数ID---------------//
             AddId("delta_time");
@@ -231,10 +236,17 @@ namespace GraduationDesign
             ComputeShaderSetBuffer("CSMain","particle_velocity_rw_structured_buffer");
             ComputeShaderSetBuffer("CSMain","granule_data_rw_structured_buffer");
             
-            cs.Dispatch(_kernels["CSMain"],Mathf.CeilToInt(_currentGranuleCount/32f) , 1, 1);
-            
             _bufferIndexBegin=1-_bufferIndexBegin;
             
+            
+            cs.Dispatch(_kernels["CSMain"],Mathf.CeilToInt(_currentGranuleCount/32f), 1, 1);
+            
+            //DEBUG:
+            GranuleDataType[] granuleData = new GranuleDataType[MaxGranuleCount * 2];
+            _buffers["granule_data_rw_structured_buffer"].GetData(granuleData);
+            for(int i=0;i<granuleData.Length;i++)
+            Debug.LogFormat("position:{0},velocity:{1},angularVelocity:{2},rotation:{3}",granuleData[i].Position,granuleData[i].Velocity,granuleData[i].AngularVelocity,granuleData[i].Rotation);
+
         }
 
         private void Update()

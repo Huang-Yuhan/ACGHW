@@ -444,8 +444,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   maxSandCount: 1
-  particleRadius: 5
-  particleMass: 0
+  particleRadius: 0.1
+  particleMass: 1
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
   cs: {fileID: 7200000, guid: 6131c2b9e45082945adb843b11d37add, type: 3}
   isDynamicAdding: 0
