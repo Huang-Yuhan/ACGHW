@@ -47,6 +47,8 @@ float3x3 QuaternionToMatrix(float4 quaternion);                                 
 void Simulation(uint3 granuleIndex : SV_DispatchThreadID);
 void UpdateParticle(uint particleIndex,granule_data_type granule_data);
 void UpdateGranule(uint granuleIndex);
+float3 get_particle_force(uint particle_index);                                                           //particle所受力
+float3 calculate_contact_force_between_two_particle(const uint particle_index1,const uint particle_index2,const int R1,const int R2);
 //--------------常量定义----------------//
 //取消常量定义
 static const int3 grid_offset[27] = {
@@ -190,6 +192,31 @@ void UpdateParticle(uint particleIndex,granule_data_type granule_data)
 
     set_next_state_particle_position(particleIndex,particle_position);
     set_next_state_particle_velocity(particleIndex,particle_velocity);
+}
+
+float3 get_particle_force(uint particle_index)
+{
+    return float3(0,0,0);
+}
+float3 calculate_contact_force_between_two_particle(const uint particle_index1,const uint particle_index2,const int R1,const int R2)
+{
+    const float3 particle_1_position=get_now_particle_position(particle_index1);
+    const float3 particle_2_position=get_now_particle_position(particle_index2);
+    const float3 particle_1_velocity=get_now_particle_velocity(particle_index1);
+    const float3 particle_2_velocity=get_now_particle_velocity(particle_index2);
+    const float3 particle_2_relative_position=particle_2_position-particle_1_position;
+    const float distance_between_particles=length(particle_2_relative_position);
+    const float overlap_normal=R1+R2-distance_between_particles;
+    const float3 normal_unit_vector=particle_2_relative_position/distance_between_particles;
+    const float3 r1=(R1-overlap_normal/2)*normal_unit_vector;
+    const float3 r2=-(R2-overlap_normal/2)*normal_unit_vector;
+    const granule_data_type granule_1=get_now_granule_data(particle_index1);
+    const granule_data_type granule_2=get_now_granule_data(particle_index2);
+    const float3 contact_point=particle_1_position+r1;
+    const float3 contact_point_v1=granule_1.velocity+cross(granule_1.angular_velocity,contact_point-granule_1.position);
+    const float3 contact_point_v2=granule_2.velocity+cross(granule_2.angular_velocity,contact_point-granule_2.position);
+    const float v_relative=contact_point_v1-contact_point_v2;
+    return float3(0,0,0);
 }
 
 //链表改为排序
