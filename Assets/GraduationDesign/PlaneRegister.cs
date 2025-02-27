@@ -9,8 +9,9 @@ namespace GraduationDesign
     {
         public struct plane_data_type
         {
-            public Vector3 position;
             public Vector3 normal;
+            public Vector3 position;
+
 
             public static int GetSize()
             {
@@ -26,6 +27,7 @@ namespace GraduationDesign
             plane_data_temp.position = position;
             plane_data_temp.normal = normal;
             plane_data.Add(plane_data_temp);
+            Debug.LogFormat("Register Plane: {0}, {1}", position, normal);
         }
 
         private void Awake()

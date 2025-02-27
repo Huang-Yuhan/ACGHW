@@ -268,7 +268,7 @@ float3 calculate_contact_force_with_plane(const uint particle_index, const float
     const float3 particle_velocity=get_now_particle_velocity(particle_index);
     const plane_data_type plane_data=plane_data_rw_structured_buffer[plane_index];
     const float distance_to_plane=dot(particle_position-plane_data.point_on_plane,plane_data.normal);
-    if(distance_to_plane>=R)
+    if(distance_to_plane>R)
     {
         return res;
     }

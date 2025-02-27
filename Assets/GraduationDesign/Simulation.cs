@@ -84,7 +84,7 @@ namespace GraduationDesign
             ComputeBuffer _particlePositionBuffer = new ComputeBuffer(MaxParticleCount*2,sizeof(float)*3);        //粒子位置，*2是类似于OpenGL中Transform Feedback的双缓冲
             ComputeBuffer _particleVelocityBuffer = new ComputeBuffer(MaxParticleCount*2,sizeof(float)*3);        //粒子速度
             ComputeBuffer _granuleDataBuffer = new ComputeBuffer(MaxGranuleCount*2,GranuleDataType.GetSize());      //颗粒数据
-            ComputeBuffer _planeDataBuffer = new ComputeBuffer(PlaneRegister.plane_data.Count,PlaneRegister.plane_data_type.GetSize());
+            ComputeBuffer _planeDataBuffer = new ComputeBuffer(PlaneRegister.plane_data.Count,PlaneRegister.plane_data_type.GetSize());     
             
             //---------------Add Compute Buffer---------------//
             AddComputeBuffer("particle_position_rw_structured_buffer",_particlePositionBuffer);
@@ -195,6 +195,7 @@ namespace GraduationDesign
             int id=Shader.PropertyToID(name);
             shaderParameterIds.Add(name, id);
             _buffers.Add(name, buffer);
+            Debug.LogFormat("Add Compute Buffer: {0},length:{1},size:{2}",name,buffer.count,buffer.stride);
         }
 
         private void AddId(string name)
