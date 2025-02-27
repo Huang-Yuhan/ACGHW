@@ -13,7 +13,10 @@ struct granule_data_type
 struct plane_data_type
 {
     float3 normal;
-    float3 point_on_plane;
+    float3 origin;
+    float3 a_axis;
+    float3 b_axis;
+    float3 particle_radius;
 };
 
 //--------------Compute Buffer定义----------------//
@@ -267,29 +270,14 @@ float3 calculate_contact_force_with_plane(const uint particle_index, const float
     const float3 particle_position=get_now_particle_position(particle_index);
     const float3 particle_velocity=get_now_particle_velocity(particle_index);
     const plane_data_type plane_data=plane_data_rw_structured_buffer[plane_index];
-    const float distance_to_plane=dot(particle_position-plane_data.point_on_plane,plane_data.normal);
-    if(distance_to_plane>R)
-    {
-        return res;
-    }
-    const float overlap_normal=R-distance_to_plane;
-    const float3 normal_unit_vector=plane_data.normal;
-    const float3 r=R*normal_unit_vector;
-    const granule_data_type granule=get_now_granule_data(get_granule_index_of_particle(particle_index));
-    const float3 contact_point=particle_position+r;
-    const float3 contact_point_v=granule.velocity+cross(granule.angular_velocity,contact_point-granule.position);
-    const float3 v_relative=contact_point_v;
-    const float3 v_relative_normal=dot(v_relative,normal_unit_vector)*normal_unit_vector;
-    const float3 v_relative_tangent=v_relative-v_relative_normal;
 
-    //计算法向力
-    const float f_n=-(-k_d*pow(overlap_normal,0.5)*length(v_relative_normal)-k_r*pow(overlap_normal,1.5));
-    const float3 f_n_vector=f_n*normal_unit_vector;
-
-    //计算切向力
-    const float f_t=-min(mu*f_n,k_t*length(v_relative_tangent));
-    const float3 f_t_vector=f_t*normalize(v_relative_tangent);
-    res=f_n_vector+f_t_vector;
+    //这里是隐式表达的平面，但是我们会将其用Particle来填充这种平面，因此Particle和平面的接触力计算就变成了Particle和Particle的接触力
+    //计算在平面上距离最近的隐式Particle
+    const float3 particle_position_offset=particle_position-plane_data.origin;
+    const float3 a_axis=plane_data.a_axis;
+    const float3 b_axis=plane_data.b_axis;
+    const float3 particle_position_in_plane_space={dot(particle_position_offset,a_axis),dot(particle_position_offset,b_axis),0};
+    
     return res;
 }
 
