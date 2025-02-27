@@ -10,11 +10,18 @@ struct granule_data_type
     float4 quaternion;
 };
 
+struct plane_data_type
+{
+    float3 normal;
+    float3 point_on_plane;
+};
+
 //--------------Compute Buffer定义----------------//
 RWStructuredBuffer<float3> particle_position_rw_structured_buffer;                                  //粒子位置
 RWStructuredBuffer<float3> particle_velocity_rw_structured_buffer;                                  //粒子速度
 RWStructuredBuffer<granule_data_type> granule_data_rw_structured_buffer;                            //Granule数据
 ConsumeStructuredBuffer<granule_data_type> granule_data_consume_structured_buffer;                  //Granule数据，用于动态添加
+RWStructuredBuffer<plane_data_type> plane_data_rw_structured_buffer;                                //平面数据
 
 //--------------变量定义----------------//
 float delta_time;                                                                                   //时间步长
@@ -26,6 +33,12 @@ float particle_mass;                                                            
 float particle_radius;                                                                              //粒子半径
 uint consume_granule_count;                                                                          //消耗Granule数量
 uint buffer_index_begin;                                                                             //缓冲区索引开始,这里主要用于处理双缓冲,值为0或1
+float k_d;                                                                                        //viscous damping coefficient(粘性阻尼系数)                                                    
+float k_r;                                                                                          //elastic restoration coefficient(弹性恢复系数)
+float mu;                                                                                           //friction coefficient(摩擦系数)
+float k_t;                                                                                          //tangential stiffness coefficient(切向刚度系数)
+float4x4 I_inverse_initial;                                                                         //初始转动惯量的逆矩阵
+uint plane_count;                                                                                   //平面数量
 //--------------函数定义----------------//
 float3 get_now_particle_position(uint index);
 float3 get_now_particle_velocity(uint index);
@@ -48,7 +61,9 @@ void Simulation(uint3 granuleIndex : SV_DispatchThreadID);
 void UpdateParticle(uint particleIndex,granule_data_type granule_data);
 void UpdateGranule(uint granuleIndex);
 float3 get_particle_force(uint particle_index);                                                           //particle所受力
-float3 calculate_contact_force_between_two_particle(const uint particle_index1,const uint particle_index2,const int R1,const int R2);
+float3 calculate_contact_force_between_two_particle(const uint particle_index1,const uint particle_index2,const float R1,const float R2); //计算两个粒子之间的接触力
+float4 quaternionMul(float4 q1,float4 q2);
+float3 calculate_contact_force_with_plane(const uint particle_index, const float R,const uint plane_index);
 //--------------常量定义----------------//
 //取消常量定义
 static const int3 grid_offset[27] = {
@@ -153,6 +168,19 @@ float3x3 QuaternionToMatrix(float4 quaternion)
     result[2][2] = 1-2*v.x*v.x-2*v.y*v.y;
     return result;
 }
+float4 quaternionMul(float4 q1,float4 q2)
+{
+    float4 result;
+    float s1 = q1.x;
+    float s2 = q2.x;
+    float3 v1 = q1.yzw;
+    float3 v2 = q2.yzw;
+
+    result.x = s1*s2-dot(v1,v2);
+    result.yzw = s1*v2+s2*v1+cross(v1,v2);
+    
+    return result;
+}
 [numthreads(32,1,1)]
 void CSMain (uint3 granuleIndex : SV_DispatchThreadID)
 {
@@ -170,18 +198,43 @@ void UpdateGranule(uint granuleIndex)
     {
         return;
     }
-    granule_data_type granule_data = get_now_granule_data(granuleIndex);
-    granule_data.velocity=granule_data.velocity+g*delta_time;
-    granule_data.position=granule_data.position+granule_data.velocity*delta_time;
-    if(granule_data.position.y<0&&granule_data.velocity.y<0)granule_data.velocity.y=-granule_data.velocity.y;
-    uint first_particle_index=get_first_particle_index_of_granule(granuleIndex);
+    const granule_data_type granule_data = get_now_granule_data(granuleIndex);
+    const uint first_particle_index=get_first_particle_index_of_granule(granuleIndex);
+    const float3 force1=get_particle_force(first_particle_index);
+    const float3 force2=get_particle_force(first_particle_index+1);
+    const float3 force3=get_particle_force(first_particle_index+2);
+    const float3 force4=get_particle_force(first_particle_index+3);
 
-    set_next_state_granule_data(granuleIndex,granule_data);
+    const float3 sum_force=force1+force2+force3+force4;
+    const float3 particle_position_offset1=get_now_particle_position(first_particle_index)-granule_data.position;
+    const float3 particle_position_offset2=get_now_particle_position(first_particle_index+1)-granule_data.position;
+    const float3 particle_position_offset3=get_now_particle_position(first_particle_index+2)-granule_data.position;
+    const float3 particle_position_offset4=get_now_particle_position(first_particle_index+3)-granule_data.position;
+    const float3 torque=cross(particle_position_offset1,force1)+cross(particle_position_offset2,force2)+cross(particle_position_offset3,force3)+cross(particle_position_offset4,force4);
+    const float3x3 rotation_matrix = QuaternionToMatrix(granule_data.quaternion);
+    const float3x3 I_ref_inv={I_inverse_initial[0][0],I_inverse_initial[0][1],I_inverse_initial[0][2],
+                              I_inverse_initial[1][0],I_inverse_initial[1][1],I_inverse_initial[1][2],
+                              I_inverse_initial[2][0],I_inverse_initial[2][1],I_inverse_initial[2][2]};
+    const float3x3 I_inv=mul(rotation_matrix,mul(I_ref_inv,transpose(rotation_matrix)));
+    const float3 angular_acceleration=mul(I_inv,torque);
+    const float3 angular_velocity=granule_data.angular_velocity+angular_acceleration*delta_time;
+    const float3 velocity=granule_data.velocity+sum_force/particle_mass*delta_time;
+    const float3 position=granule_data.position+velocity*delta_time;
+    const float4 quaternion=normalize(granule_data.quaternion+quaternionMul(float4(0,angular_velocity),granule_data.quaternion)*delta_time*0.5);
+    granule_data_type granule_data_new;
+    granule_data_new.position=position;
+    granule_data_new.velocity=velocity;
+    granule_data_new.angular_velocity=angular_velocity;
+    granule_data_new.quaternion=quaternion;
     
-    UpdateParticle(first_particle_index,granule_data);
-    UpdateParticle(first_particle_index+1,granule_data);
-    UpdateParticle(first_particle_index+2,granule_data);
-    UpdateParticle(first_particle_index+3,granule_data);
+    
+
+    set_next_state_granule_data(granuleIndex,granule_data_new);
+    
+    UpdateParticle(first_particle_index,granule_data_new);
+    UpdateParticle(first_particle_index+1,granule_data_new);
+    UpdateParticle(first_particle_index+2,granule_data_new);
+    UpdateParticle(first_particle_index+3,granule_data_new);
 }
 
 void UpdateParticle(uint particleIndex,granule_data_type granule_data)
@@ -196,10 +249,53 @@ void UpdateParticle(uint particleIndex,granule_data_type granule_data)
 
 float3 get_particle_force(uint particle_index)
 {
-    return float3(0,0,0);
+    float3 res=particle_mass*g;
+    // for(uint i=0;i<current_particle_count;i++)
+    // {
+    //     res+=calculate_contact_force_between_two_particle(particle_index,i,particle_radius,particle_radius);
+    // }
+    for(uint i=0;i<plane_count;i++)
+    {
+        res+=calculate_contact_force_with_plane(particle_index,particle_radius,i);
+    }
+    return res;
 }
-float3 calculate_contact_force_between_two_particle(const uint particle_index1,const uint particle_index2,const int R1,const int R2)
+
+float3 calculate_contact_force_with_plane(const uint particle_index, const float R,const uint plane_index)
 {
+    float3 res=float3(0,0,0);
+    const float3 particle_position=get_now_particle_position(particle_index);
+    const float3 particle_velocity=get_now_particle_velocity(particle_index);
+    const plane_data_type plane_data=plane_data_rw_structured_buffer[plane_index];
+    const float distance_to_plane=dot(particle_position-plane_data.point_on_plane,plane_data.normal);
+    if(distance_to_plane>=R)
+    {
+        return res;
+    }
+    const float overlap_normal=R-distance_to_plane;
+    const float3 normal_unit_vector=plane_data.normal;
+    const float3 r=R*normal_unit_vector;
+    const granule_data_type granule=get_now_granule_data(get_granule_index_of_particle(particle_index));
+    const float3 contact_point=particle_position+r;
+    const float3 contact_point_v=granule.velocity+cross(granule.angular_velocity,contact_point-granule.position);
+    const float3 v_relative=contact_point_v;
+    const float3 v_relative_normal=dot(v_relative,normal_unit_vector)*normal_unit_vector;
+    const float3 v_relative_tangent=v_relative-v_relative_normal;
+
+    //计算法向力
+    const float f_n=-(-k_d*pow(overlap_normal,0.5)*length(v_relative_normal)-k_r*pow(overlap_normal,1.5));
+    const float3 f_n_vector=f_n*normal_unit_vector;
+
+    //计算切向力
+    const float f_t=-min(mu*f_n,k_t*length(v_relative_tangent));
+    const float3 f_t_vector=f_t*normalize(v_relative_tangent);
+    res=f_n_vector+f_t_vector;
+    return res;
+}
+
+float3 calculate_contact_force_between_two_particle(const uint particle_index1,const uint particle_index2,const float R1,const float R2)
+{
+    if(particle_index1==particle_index2)return float3(0,0,0);
     const float3 particle_1_position=get_now_particle_position(particle_index1);
     const float3 particle_2_position=get_now_particle_position(particle_index2);
     const float3 particle_1_velocity=get_now_particle_velocity(particle_index1);
@@ -215,8 +311,19 @@ float3 calculate_contact_force_between_two_particle(const uint particle_index1,c
     const float3 contact_point=particle_1_position+r1;
     const float3 contact_point_v1=granule_1.velocity+cross(granule_1.angular_velocity,contact_point-granule_1.position);
     const float3 contact_point_v2=granule_2.velocity+cross(granule_2.angular_velocity,contact_point-granule_2.position);
-    const float v_relative=contact_point_v1-contact_point_v2;
-    return float3(0,0,0);
+    const float3 v_relative=contact_point_v1-contact_point_v2;
+    const float3 v_relative_normal=dot(v_relative,normal_unit_vector)*normal_unit_vector;
+    const float3 v_relative_tangent=v_relative-v_relative_normal;
+
+    //计算法向力
+    const float f_n=-(-k_d*pow(overlap_normal,0.5)*length(v_relative_normal)-k_r*pow(overlap_normal,1.5));
+    const float3 f_n_vector=f_n*normal_unit_vector;
+
+    //计算切向力
+    const float f_t=-min(mu*f_n,k_t*length(v_relative_tangent));
+    const float3 f_t_vector=f_t*normalize(v_relative_tangent);
+    
+    return f_n_vector+f_t_vector;
 }
 
 //链表改为排序

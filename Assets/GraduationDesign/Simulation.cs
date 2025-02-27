@@ -19,6 +19,11 @@ namespace GraduationDesign
         public ComputeShader cs;
 
         public bool isDynamicAdding;
+
+        public float viscousDampingCoefficient=0.5f;
+        public float elasticRestorationCoefficient=0.5f;
+        public float frictionCoefficient=0.5f;
+        public float tangentialStiffnessCoefficient=0.5f;
         
         [Header("沙粒渲染")]
         public Material material;
@@ -33,7 +38,7 @@ namespace GraduationDesign
         /// https://zh.wikipedia.org/wiki/%E6%AD%A3%E5%9B%9B%E9%9D%A2%E9%AB%94
         /// 以正四面体的中心作为原点建立三维直角坐标系的话，棱长a=2的正四面体的顶点坐标
         /// </summary>
-        private Vector3[] _tetrahedronVertices = new Vector3[]
+        private readonly Vector3[] _tetrahedronVertices = new Vector3[]
         {
             new Vector3(1,0,-1/(float)Math.Sqrt(2)),
             new Vector3(-1,0,-1/(float)Math.Sqrt(2)),
@@ -58,7 +63,7 @@ namespace GraduationDesign
         private int _currentGranuleCount=>_currentSandCount; //当前一共的颗粒数量
         private int _currentParticleCount=>_currentSandCount*4; //当前一共的粒子数量
         private int _bufferIndexBegin;
-        
+        private Matrix4x4 _I_inverse_initial;
         //-----------------沙粒渲染-----------------//
         private RenderParams _renderParams;
         private GraphicsBuffer _commandBuffer;
@@ -79,18 +84,20 @@ namespace GraduationDesign
             ComputeBuffer _particlePositionBuffer = new ComputeBuffer(MaxParticleCount*2,sizeof(float)*3);        //粒子位置，*2是类似于OpenGL中Transform Feedback的双缓冲
             ComputeBuffer _particleVelocityBuffer = new ComputeBuffer(MaxParticleCount*2,sizeof(float)*3);        //粒子速度
             ComputeBuffer _granuleDataBuffer = new ComputeBuffer(MaxGranuleCount*2,GranuleDataType.GetSize());      //颗粒数据
+            ComputeBuffer _planeDataBuffer = new ComputeBuffer(PlaneRegister.plane_data.Count,PlaneRegister.plane_data_type.GetSize());
             
             //---------------Add Compute Buffer---------------//
             AddComputeBuffer("particle_position_rw_structured_buffer",_particlePositionBuffer);
             AddComputeBuffer("particle_velocity_rw_structured_buffer",_particleVelocityBuffer);
             AddComputeBuffer("granule_data_rw_structured_buffer",_granuleDataBuffer);
+            AddComputeBuffer("plane_data_rw_structured_buffer",_planeDataBuffer);
             
             
             //---------------Add Kernels---------------//
             AddKernel("CSMain");
         }
 
-        void InitRender()
+        private void InitRender()
         {
             _commandBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 1, GraphicsBuffer.IndirectDrawIndexedArgs.size);
             _commandData = new GraphicsBuffer.IndirectDrawIndexedArgs[1];
@@ -103,7 +110,7 @@ namespace GraduationDesign
             _renderParams.worldBounds = new Bounds(Vector3.zero, 100 * Vector3.one);//设定边界
         }
 
-        void InitData()
+        private void InitData()
         {
             if(isDynamicAdding)
             {
@@ -115,11 +122,11 @@ namespace GraduationDesign
             }
         }
 
-        void InitDynamicAddData()
+        private void InitDynamicAddData()
         {
             throw new NotImplementedException();
         }
-        void InitNonDynamicAddData()
+        private void InitNonDynamicAddData()
         {
             //---------------初始化Granule Data---------------//
             GranuleDataType[] granuleData = new GranuleDataType[_buffers["granule_data_rw_structured_buffer"].count];
@@ -145,6 +152,10 @@ namespace GraduationDesign
             _buffers["granule_data_rw_structured_buffer"].SetData(granuleData);
             _buffers["particle_position_rw_structured_buffer"].SetData(particlePosition);
             _buffers["particle_velocity_rw_structured_buffer"].SetData(particleVelocity);
+            _buffers["plane_data_rw_structured_buffer"].SetData(PlaneRegister.plane_data.ToArray());
+            
+            //---------------设置参数---------------//
+            _I_inverse_initial = CalculateRefererenceInertiaTensor().inverse;
             
             //---------------添加参数ID---------------//
             AddId("delta_time");
@@ -156,10 +167,16 @@ namespace GraduationDesign
             AddId("particle_radius");
             AddId("consume_granule_count");
             AddId("buffer_index_begin");
+            AddId("k_d");
+            AddId("k_r");
+            AddId("k_t");
+            AddId("mu");
+            AddId("plane_count");
+            AddId("I_inverse_initial");
 
         }
 
-        private void Awake()
+        private void Start()
         {
             InitSimulation();
             InitData();
@@ -229,12 +246,20 @@ namespace GraduationDesign
             cs.SetFloat(shaderParameterIds["particle_mass"], particleMass);
             cs.SetFloat(shaderParameterIds["particle_radius"], particleRadius);
             cs.SetInt(shaderParameterIds["buffer_index_begin"], _bufferIndexBegin);
+            cs.SetFloat(shaderParameterIds["k_d"], viscousDampingCoefficient);
+            cs.SetFloat(shaderParameterIds["k_r"], elasticRestorationCoefficient);
+            cs.SetFloat(shaderParameterIds["k_t"], tangentialStiffnessCoefficient);
+            cs.SetFloat(shaderParameterIds["mu"], frictionCoefficient);
+            cs.SetInt(shaderParameterIds["plane_count"], PlaneRegister.plane_data.Count);
+            cs.SetMatrix(shaderParameterIds["I_inverse_initial"], _I_inverse_initial);
+            
             //-----------------设置Buffer-----------------//
             
             //CSMain 
             ComputeShaderSetBuffer("CSMain","particle_position_rw_structured_buffer");
             ComputeShaderSetBuffer("CSMain","particle_velocity_rw_structured_buffer");
             ComputeShaderSetBuffer("CSMain","granule_data_rw_structured_buffer");
+            ComputeShaderSetBuffer("CSMain","plane_data_rw_structured_buffer");
             
             _bufferIndexBegin=1-_bufferIndexBegin;
             
@@ -245,10 +270,34 @@ namespace GraduationDesign
             GranuleDataType[] granuleData = new GranuleDataType[MaxGranuleCount * 2];
             _buffers["granule_data_rw_structured_buffer"].GetData(granuleData);
             for(int i=0;i<granuleData.Length;i++)
-            Debug.LogFormat("position:{0},velocity:{1},angularVelocity:{2},rotation:{3}",granuleData[i].Position,granuleData[i].Velocity,granuleData[i].AngularVelocity,granuleData[i].Rotation);
+                Debug.LogFormat("position:{0},velocity:{1},angularVelocity:{2},rotation:{3}",granuleData[i].Position,granuleData[i].Velocity,granuleData[i].AngularVelocity,granuleData[i].Rotation);
 
         }
-
+        Matrix4x4 CalculateRefererenceInertiaTensor()
+        {
+            Mesh sphereMesh = mesh;
+            Vector3[] vertices = sphereMesh.vertices;
+            Matrix4x4 I_ref = Matrix4x4.zero;
+            float vertexMass = particleMass;
+            for (int i = 0; i < _tetrahedronVertices.Length; i++)
+            {
+                I_ref[0, 0] += vertexMass * _tetrahedronVertices[i].sqrMagnitude;
+                I_ref[1, 1] += vertexMass * _tetrahedronVertices[i].sqrMagnitude;
+                I_ref[2, 2] += vertexMass * _tetrahedronVertices[i].sqrMagnitude;
+                I_ref[0, 0] -= vertexMass * _tetrahedronVertices[i][0] * _tetrahedronVertices[i][0];
+                I_ref[0, 1] -= vertexMass * _tetrahedronVertices[i][0] * _tetrahedronVertices[i][1];
+                I_ref[0, 2] -= vertexMass * _tetrahedronVertices[i][0] * _tetrahedronVertices[i][2];
+                I_ref[1, 0] -= vertexMass * _tetrahedronVertices[i][1] * _tetrahedronVertices[i][0];
+                I_ref[1, 1] -= vertexMass * _tetrahedronVertices[i][1] * _tetrahedronVertices[i][1];
+                I_ref[1, 2] -= vertexMass * _tetrahedronVertices[i][1] * _tetrahedronVertices[i][2];
+                I_ref[2, 0] -= vertexMass * _tetrahedronVertices[i][2] * _tetrahedronVertices[i][0];
+                I_ref[2, 1] -= vertexMass * _tetrahedronVertices[i][2] * _tetrahedronVertices[i][1];
+                I_ref[2, 2] -= vertexMass * _tetrahedronVertices[i][2] * _tetrahedronVertices[i][2];
+            }
+            I_ref[3, 3] = 1;                
+            Debug.Log("I_ref: " + I_ref);
+            return I_ref;
+        }
         private void Update()
         {
             ProcessRender();
