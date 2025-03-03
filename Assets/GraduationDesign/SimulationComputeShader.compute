@@ -16,7 +16,7 @@ struct plane_data_type
     float3 origin;
     float3 a_axis;
     float3 b_axis;
-    float3 particle_radius;
+    float particle_radius;
 };
 
 //--------------Compute Buffer定义----------------//
@@ -65,6 +65,7 @@ void UpdateParticle(uint particleIndex,granule_data_type granule_data);
 void UpdateGranule(uint granuleIndex);
 float3 get_particle_force(uint particle_index);                                                           //particle所受力
 float3 calculate_contact_force_between_two_particle(const uint particle_index1,const uint particle_index2,const float R1,const float R2); //计算两个粒子之间的接触力
+float3 calculate_contact_force_between_two_particle(const float3 particle_position1,const float3 particle_position2,const float3 particle_velocity1,const float3 particle_velocity2,const float R1,const float R2); //计算两个粒子之间的接触力
 float4 quaternionMul(float4 q1,float4 q2);
 float3 calculate_contact_force_with_plane(const uint particle_index, const float R,const uint plane_index);
 //--------------常量定义----------------//
@@ -271,12 +272,31 @@ float3 calculate_contact_force_with_plane(const uint particle_index, const float
     const float3 particle_velocity=get_now_particle_velocity(particle_index);
     const plane_data_type plane_data=plane_data_rw_structured_buffer[plane_index];
 
-    //这里是隐式表达的平面，但是我们会将其用Particle来填充这种平面，因此Particle和平面的接触力计算就变成了Particle和Particle的接触力
-    //计算在平面上距离最近的隐式Particle
     const float3 particle_position_offset=particle_position-plane_data.origin;
-    const float3 a_axis=plane_data.a_axis;
-    const float3 b_axis=plane_data.b_axis;
-    const float3 particle_position_in_plane_space={dot(particle_position_offset,a_axis),dot(particle_position_offset,b_axis),0};
+    const float3 a_axis=normalize(plane_data.a_axis);
+    const float3 b_axis=normalize(plane_data.b_axis);
+    const float3 particle_position_in_plane_space={dot(particle_position_offset,a_axis),dot(particle_position_offset,plane_data.normal),dot(particle_position_offset,b_axis)};
+    const float r=sqrt(R*R-particle_position_in_plane_space.y*particle_position_in_plane_space.y);
+    //找到相交的Particle
+    const float x_min=max(0,particle_position_in_plane_space.x-r);
+    const float x_max=min(length(plane_data.a_axis),particle_position_in_plane_space.x+r);
+    const float y_min=max(0,particle_position_in_plane_space.z-r);
+    const float y_max=min(length(plane_data.b_axis),particle_position_in_plane_space.z+r);
+
+    const uint x_min_index=floor(x_min/plane_data.particle_radius/2);
+    const uint x_max_index=ceil(x_max/plane_data.particle_radius/2);
+    const uint y_min_index=floor(y_min/plane_data.particle_radius/2);
+    const uint y_max_index=ceil(y_max/plane_data.particle_radius/2);
+
+    for (uint x=x_min_index;x<=x_max_index;x++)
+        for (uint y=y_min_index;y<=y_max_index;y++)
+        {
+            const float3 pos_in_world=plane_data.origin+a_axis*x*plane_data.particle_radius*2+b_axis*y*plane_data.particle_radius*2;
+            if (distance(particle_position,pos_in_world)<R)
+            {
+                res+=calculate_contact_force_between_two_particle(particle_position,pos_in_world,particle_velocity,float3(0,0,0),R,plane_data.particle_radius);
+            }
+        }
     
     return res;
 }
@@ -284,21 +304,25 @@ float3 calculate_contact_force_with_plane(const uint particle_index, const float
 float3 calculate_contact_force_between_two_particle(const uint particle_index1,const uint particle_index2,const float R1,const float R2)
 {
     if(particle_index1==particle_index2)return float3(0,0,0);
-    const float3 particle_1_position=get_now_particle_position(particle_index1);
-    const float3 particle_2_position=get_now_particle_position(particle_index2);
-    const float3 particle_1_velocity=get_now_particle_velocity(particle_index1);
-    const float3 particle_2_velocity=get_now_particle_velocity(particle_index2);
-    const float3 particle_2_relative_position=particle_2_position-particle_1_position;
+    const float3 particle_position1=get_now_particle_position(particle_index1);
+    const float3 particle_position2=get_now_particle_position(particle_index2);
+    const float3 particle_velocity1=get_now_particle_velocity(particle_index1);
+    const float3 particle_velocity2=get_now_particle_velocity(particle_index2);
+    return calculate_contact_force_between_two_particle(particle_position1,particle_position2,particle_velocity1,particle_velocity2,R1,R2);
+}
+
+float3 calculate_contact_force_between_two_particle(const float3 particle_position1,const float3 particle_position2,const float3 particle_velocity1,const float3 particle_velocity2,const float R1,const float R2)
+{
+    const float3 particle_2_relative_position=particle_position2-particle_position1;
     const float distance_between_particles=length(particle_2_relative_position);
     const float overlap_normal=R1+R2-distance_between_particles;
+    if (overlap_normal<=0)return float3(0,0,0);
     const float3 normal_unit_vector=particle_2_relative_position/distance_between_particles;
     const float3 r1=(R1-overlap_normal/2)*normal_unit_vector;
     const float3 r2=-(R2-overlap_normal/2)*normal_unit_vector;
-    const granule_data_type granule_1=get_now_granule_data(particle_index1);
-    const granule_data_type granule_2=get_now_granule_data(particle_index2);
-    const float3 contact_point=particle_1_position+r1;
-    const float3 contact_point_v1=granule_1.velocity+cross(granule_1.angular_velocity,contact_point-granule_1.position);
-    const float3 contact_point_v2=granule_2.velocity+cross(granule_2.angular_velocity,contact_point-granule_2.position);
+    const float3 contact_point=particle_position1+r1;
+    const float3 contact_point_v1=particle_velocity1+cross(particle_velocity1,contact_point-particle_position1);
+    const float3 contact_point_v2=particle_velocity2+cross(particle_velocity2,contact_point-particle_position2);
     const float3 v_relative=contact_point_v1-contact_point_v2;
     const float3 v_relative_normal=dot(v_relative,normal_unit_vector)*normal_unit_vector;
     const float3 v_relative_tangent=v_relative-v_relative_normal;
@@ -311,7 +335,7 @@ float3 calculate_contact_force_between_two_particle(const uint particle_index1,c
     const float f_t=-min(mu*f_n,k_t*length(v_relative_tangent));
     const float3 f_t_vector=f_t*normalize(v_relative_tangent);
     
-    return f_n_vector+f_t_vector;
+    return f_n_vector;
 }
 
 //链表改为排序

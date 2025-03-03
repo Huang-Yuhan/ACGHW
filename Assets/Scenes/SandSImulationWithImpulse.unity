@@ -648,7 +648,7 @@ MonoBehaviour:
   particleMass: 1
   restitutionCoefficient: 0.5
   frictionCoefficient: 0.3
-  deltaTime: 0.02
+  deltaTime: 0.002
   isStopCompute: 0
 --- !u!114 &756179834
 MonoBehaviour:

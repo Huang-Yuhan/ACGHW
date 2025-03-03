@@ -316,7 +316,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 10, y: 10, z: 10}
+  m_LocalScale: {x: 5, y: 5, z: 5}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 0}
@@ -333,6 +333,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 59e0715dbfdc7cc47841d551b18f260d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  particle_radius: 0.1
+  isRenderParticle: 1
+  material: {fileID: 2100000, guid: db3bbfca54d08574a877c992f818e151, type: 2}
+  mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!1 &85689294
 GameObject:
   m_ObjectHideFlags: 0
@@ -462,12 +466,12 @@ MonoBehaviour:
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
   cs: {fileID: 7200000, guid: 6131c2b9e45082945adb843b11d37add, type: 3}
   isDynamicAdding: 0
-  viscousDampingCoefficient: 138
-  elasticRestorationCoefficient: 103500
+  viscousDampingCoefficient: 35
+  elasticRestorationCoefficient: 25875
   frictionCoefficient: 0.5
   tangentialStiffnessCoefficient: 500
   material: {fileID: 2100000, guid: 1efb0a9e5bd905949ab352e2fa33a023, type: 2}
-  deltaTime: 0.02
+  deltaTime: 0.005
 --- !u!4 &190869049
 Transform:
   m_ObjectHideFlags: 0
