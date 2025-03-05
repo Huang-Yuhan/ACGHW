@@ -49,14 +49,46 @@ namespace GraduationDesign
 
         private void Awake()
         {
+            
+            //找到平面网格中的四个点
+            float x_min = float.MaxValue;
+            float x_max = float.MinValue;
+            float z_min = float.MaxValue;
+            float z_max = float.MinValue;
+            
+            MeshFilter meshFilter = GetComponent<MeshFilter>();
+            Mesh mesh = meshFilter.mesh;
+            Vector3[] vertices = mesh.vertices;
+            foreach (Vector3 vertex in vertices)
+            {
+                if (vertex.x < x_min)
+                {
+                    x_min = vertex.x;
+                }
+                if (vertex.x > x_max)
+                {
+                    x_max = vertex.x;
+                }
+                if (vertex.z < z_min)
+                {
+                    z_min = vertex.z;
+                }
+                if (vertex.z > z_max)
+                {
+                    z_max = vertex.z;
+                }
+            }
+            
             Vector3 origin_in_unity=transform.position;
             Vector3 normal_in_unity=transform.up;
             Vector3 a_axis_in_unity=transform.right;
             Vector3 b_axis_in_unity=transform.forward;
-            Vector3 origin=origin_in_unity-a_axis_in_unity*transform.localScale.x/2-b_axis_in_unity*transform.localScale.z/2;
+            float x_length_in_unity=(x_max-x_min)*transform.localScale.x;
+            float z_length_in_unity=(z_max-z_min)*transform.localScale.z;
+            Vector3 origin=origin_in_unity-a_axis_in_unity*x_length_in_unity/2-b_axis_in_unity*z_length_in_unity/2;
             Vector3 normal=normal_in_unity;
-            Vector3 a_axis=a_axis_in_unity*transform.localScale.x;
-            Vector3 b_axis=b_axis_in_unity*transform.localScale.z;
+            Vector3 a_axis=a_axis_in_unity*x_length_in_unity;
+            Vector3 b_axis=b_axis_in_unity*z_length_in_unity;
             RegisterPlane(origin, normal, a_axis, b_axis, particle_radius);
             
             thisOneplaneData = plane_data[plane_data.Count - 1];
@@ -74,8 +106,8 @@ namespace GraduationDesign
         
         private void Start()
         {
-            uint x_max_count = (uint)(thisOneplaneData.a_axis.magnitude / particle_radius/2);
-            uint z_max_count = (uint)(thisOneplaneData.b_axis.magnitude / particle_radius/2);
+            uint x_max_count = (uint)(thisOneplaneData.a_axis.magnitude / particle_radius/2)+1;
+            uint z_max_count = (uint)(thisOneplaneData.b_axis.magnitude / particle_radius/2)+1;
             Debug.LogFormat("x_max_count: {0}, z_max_count: {1}", x_max_count, z_max_count);
             commandBuf = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 1, GraphicsBuffer.IndirectDrawIndexedArgs.size);
             commandData = new GraphicsBuffer.IndirectDrawIndexedArgs[1];
@@ -91,8 +123,8 @@ namespace GraduationDesign
                 for (int j = 0; j < z_max_count; j++)
                 {
                     data[i * z_max_count + j] = thisOneplaneData.position +
-                                                thisOneplaneData.a_axis.normalized * i * particle_radius * 2 +
-                                                thisOneplaneData.b_axis.normalized * j * particle_radius * 2;
+                                                thisOneplaneData.a_axis.normalized * i * particle_radius*2 +
+                                                thisOneplaneData.b_axis.normalized * j * particle_radius*2;
                 }
             }
             particelPositionBuffer.SetData(data);
@@ -117,6 +149,18 @@ namespace GraduationDesign
             commandBuf = null;
             particelPositionBuffer?.Release();
             particelPositionBuffer = null;
+        }
+
+        private void OnDrawGizmosSelected()
+        {
+            //绘制原点
+            Gizmos.color = Color.red;
+            Gizmos.DrawSphere(thisOneplaneData.position, 0.1f);
+            //绘制两个轴
+            Gizmos.color = Color.green;
+            Gizmos.DrawLine(thisOneplaneData.position, thisOneplaneData.position + thisOneplaneData.a_axis);
+            Gizmos.color = Color.blue;
+            Gizmos.DrawLine(thisOneplaneData.position, thisOneplaneData.position + thisOneplaneData.b_axis);
         }
     }
 }

@@ -33,7 +33,7 @@ Shader "Custom/ParticleInstanceShader"
                 uint cmdID = GetCommandID(0);
                 uint instanceID = GetIndirectInstanceID(svInstanceID);
                 float3 center = _PositionBuffer[instanceID];
-                float4 wpos = float4(v.vertex.xyz*_ParticleRadius + center, 1);
+                float4 wpos = float4(v.vertex.xyz*_ParticleRadius*2 + center, 1);
                 o.pos = UnityObjectToClipPos(wpos);
                 o.color = float4(1, 1, 1, 1);
                 return o;
