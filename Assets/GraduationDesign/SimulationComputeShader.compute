@@ -258,10 +258,10 @@ void UpdateParticle(uint particleIndex,granule_data_type granule_data)
 float3 get_particle_force(uint particle_index)
 {
     float3 res=particle_mass*g;
-    // for(uint i=0;i<current_particle_count;i++)
-    // {
-    //     res+=calculate_contact_force_between_two_particle(particle_index,i,particle_radius,particle_radius);
-    // }
+    for(uint i=0;i<current_particle_count;i++)
+    {
+        res+=calculate_contact_force_between_two_particle(particle_index,i,particle_radius,particle_radius);
+    }
     for(uint i=0;i<plane_count;i++)
     {
         res+=calculate_contact_force_with_plane(particle_index,particle_radius,i);
@@ -314,7 +314,7 @@ float3 calculate_contact_force_with_plane(const uint particle_index, const float
 
 float3 calculate_contact_force_between_two_particle(const uint particle_index1,const uint particle_index2,const float R1,const float R2)
 {
-    if(particle_index1==particle_index2)return float3(0,0,0);
+    if (get_granule_index_of_particle(particle_index1)==get_granule_index_of_particle(particle_index2))return float3(0,0,0);
     const float3 particle_position1=get_now_particle_position(particle_index1);
     const float3 particle_position2=get_now_particle_position(particle_index2);
     const float3 particle_velocity1=get_now_particle_velocity(particle_index1);

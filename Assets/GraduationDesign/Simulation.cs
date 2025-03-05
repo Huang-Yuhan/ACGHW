@@ -5,6 +5,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 
 namespace GraduationDesign
@@ -144,8 +145,8 @@ namespace GraduationDesign
             Vector3[] particleVelocity = new Vector3[_buffers["particle_velocity_rw_structured_buffer"].count];
             for (int i = 0; i < granuleData.Length; i++)
             {
-                granuleData[i].Position = new Vector3(0, 1, 0);
-                granuleData[i].Velocity = Vector3.zero;
+                granuleData[i].Position = new Vector3(Random.Range(-9f, 9f), Random.Range(1f,5f), Random.Range(-9f, 9f));
+                granuleData[i].Velocity = Random.onUnitSphere;
                 granuleData[i].AngularVelocity = Vector3.zero;
                 granuleData[i].Rotation = Quaternion.identity;
                 for(int j=0;j<4;j++)
