@@ -1,7 +1,11 @@
+#define DEBUG_APPEND
+#undef DEBUG_APPEND 
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+
 
 namespace GraduationDesign
 {
@@ -84,13 +88,19 @@ namespace GraduationDesign
             ComputeBuffer _particlePositionBuffer = new ComputeBuffer(MaxParticleCount*2,sizeof(float)*3);        //粒子位置，*2是类似于OpenGL中Transform Feedback的双缓冲
             ComputeBuffer _particleVelocityBuffer = new ComputeBuffer(MaxParticleCount*2,sizeof(float)*3);        //粒子速度
             ComputeBuffer _granuleDataBuffer = new ComputeBuffer(MaxGranuleCount*2,GranuleDataType.GetSize());      //颗粒数据
-            ComputeBuffer _planeDataBuffer = new ComputeBuffer(PlaneRegister.plane_data.Count,PlaneRegister.plane_data_type.GetSize());     
+            ComputeBuffer _planeDataBuffer = new ComputeBuffer(PlaneRegister.plane_data.Count,PlaneRegister.plane_data_type.GetSize());
             
+            #if DEBUG_APPEND
+            ComputeBuffer _debug_append_structured_buffer = new ComputeBuffer(100,sizeof(float)*3,ComputeBufferType.Append);
+            #endif
             //---------------Add Compute Buffer---------------//
             AddComputeBuffer("particle_position_rw_structured_buffer",_particlePositionBuffer);
             AddComputeBuffer("particle_velocity_rw_structured_buffer",_particleVelocityBuffer);
             AddComputeBuffer("granule_data_rw_structured_buffer",_granuleDataBuffer);
             AddComputeBuffer("plane_data_rw_structured_buffer",_planeDataBuffer);
+            #if DEBUG_APPEND
+            AddComputeBuffer("debug_append_structured_buffer",_debug_append_structured_buffer);
+            #endif
             
             
             //---------------Add Kernels---------------//
@@ -134,7 +144,7 @@ namespace GraduationDesign
             Vector3[] particleVelocity = new Vector3[_buffers["particle_velocity_rw_structured_buffer"].count];
             for (int i = 0; i < granuleData.Length; i++)
             {
-                granuleData[i].Position = new Vector3(0, 5, 0);
+                granuleData[i].Position = new Vector3(0, 1, 0);
                 granuleData[i].Velocity = Vector3.zero;
                 granuleData[i].AngularVelocity = Vector3.zero;
                 granuleData[i].Rotation = Quaternion.identity;
@@ -261,6 +271,9 @@ namespace GraduationDesign
             ComputeShaderSetBuffer("CSMain","particle_velocity_rw_structured_buffer");
             ComputeShaderSetBuffer("CSMain","granule_data_rw_structured_buffer");
             ComputeShaderSetBuffer("CSMain","plane_data_rw_structured_buffer");
+            #if DEBUG_APPEND
+            ComputeShaderSetBuffer("CSMain","debug_append_structured_buffer");
+            #endif
             
             _bufferIndexBegin=1-_bufferIndexBegin;
             
@@ -268,10 +281,29 @@ namespace GraduationDesign
             cs.Dispatch(_kernels["CSMain"],Mathf.CeilToInt(_currentGranuleCount/32f), 1, 1);
             
             //DEBUG:
-            GranuleDataType[] granuleData = new GranuleDataType[MaxGranuleCount * 2];
-            _buffers["granule_data_rw_structured_buffer"].GetData(granuleData);
-            for(int i=0;i<granuleData.Length;i++)
-                Debug.LogFormat("position:{0},velocity:{1},angularVelocity:{2},rotation:{3}",granuleData[i].Position,granuleData[i].Velocity,granuleData[i].AngularVelocity,granuleData[i].Rotation);
+            // GranuleDataType[] granuleData = new GranuleDataType[MaxGranuleCount * 2];
+            // _buffers["granule_data_rw_structured_buffer"].GetData(granuleData);
+            // for(int i=0;i<granuleData.Length;i++)
+            //     Debug.LogFormat("position:{0},velocity:{1},angularVelocity:{2},rotation:{3}",granuleData[i].Position,granuleData[i].Velocity,granuleData[i].AngularVelocity,granuleData[i].Rotation);
+            
+            #if DEBUG_APPEND
+            ComputeBuffer debug_append_count_buffer = new ComputeBuffer(1,sizeof(int),ComputeBufferType.Raw);
+            ComputeBuffer.CopyCount(_buffers["debug_append_structured_buffer"],debug_append_count_buffer,0);
+            int[] debug_append_count = new int[1];
+            debug_append_count_buffer.GetData(debug_append_count);
+            if(debug_append_count[0]>0)
+            {
+                Debug.LogFormat("debug buffer 中数据有{0}个",debug_append_count[0]);
+                Debug.Log("debug buffer中的数据为:");
+                Vector3[] debug_append_data=new Vector3[debug_append_count[0]];
+                _buffers["debug_append_structured_buffer"].GetData(debug_append_data);
+                for(int i=0;i<debug_append_data.Length;i+=3)
+                    Debug.LogFormat("granule粒子位置:{0},平面粒子位置:{1},二者接触力计算结果为:{2}",debug_append_data[i],debug_append_data[i+1],debug_append_data[i+2]);
+            }
+            //清空Append Buffer
+            _buffers["debug_append_structured_buffer"].SetCounterValue(0);
+            debug_append_count_buffer.Release();
+            #endif
 
         }
         Matrix4x4 CalculateRefererenceInertiaTensor()

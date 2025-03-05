@@ -334,7 +334,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   particle_radius: 0.1
-  isRenderParticle: 1
+  isRenderParticle: 0
   material: {fileID: 2100000, guid: db3bbfca54d08574a877c992f818e151, type: 2}
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!1 &85689294
@@ -467,11 +467,11 @@ MonoBehaviour:
   cs: {fileID: 7200000, guid: 6131c2b9e45082945adb843b11d37add, type: 3}
   isDynamicAdding: 0
   viscousDampingCoefficient: 35
-  elasticRestorationCoefficient: 25875
+  elasticRestorationCoefficient: 20000
   frictionCoefficient: 0.5
   tangentialStiffnessCoefficient: 500
   material: {fileID: 2100000, guid: 1efb0a9e5bd905949ab352e2fa33a023, type: 2}
-  deltaTime: 0.005
+  deltaTime: 0.01
 --- !u!4 &190869049
 Transform:
   m_ObjectHideFlags: 0

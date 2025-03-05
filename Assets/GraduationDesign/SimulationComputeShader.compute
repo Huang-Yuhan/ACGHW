@@ -25,6 +25,9 @@ RWStructuredBuffer<float3> particle_velocity_rw_structured_buffer;              
 RWStructuredBuffer<granule_data_type> granule_data_rw_structured_buffer;                            //Granule数据
 ConsumeStructuredBuffer<granule_data_type> granule_data_consume_structured_buffer;                  //Granule数据，用于动态添加
 RWStructuredBuffer<plane_data_type> plane_data_rw_structured_buffer;                                //平面数据
+#ifdef DEBUG
+AppendStructuredBuffer<float3> debug_append_structured_buffer;                                      //for debug
+#endif
 
 //--------------变量定义----------------//
 float delta_time;                                                                                   //时间步长
@@ -202,6 +205,7 @@ void UpdateGranule(uint granuleIndex)
     {
         return;
     }
+    
     const granule_data_type granule_data = get_now_granule_data(granuleIndex);
     const uint first_particle_index=get_first_particle_index_of_granule(granuleIndex);
     const float3 force1=get_particle_force(first_particle_index);
@@ -222,13 +226,13 @@ void UpdateGranule(uint granuleIndex)
     const float3x3 I_inv=mul(rotation_matrix,mul(I_ref_inv,transpose(rotation_matrix)));
     const float3 angular_acceleration=mul(I_inv,torque);
     const float3 angular_velocity=granule_data.angular_velocity+angular_acceleration*delta_time;
-    const float3 velocity=granule_data.velocity+sum_force/particle_mass*delta_time;
+    const float3 velocity=granule_data.velocity+sum_force/particle_mass/4*delta_time;
     const float3 position=granule_data.position+velocity*delta_time;
     const float4 quaternion=normalize(granule_data.quaternion+quaternionMul(float4(0,angular_velocity),granule_data.quaternion)*delta_time*0.5);
     granule_data_type granule_data_new;
     granule_data_new.position=position;
-    granule_data_new.velocity=velocity;
-    granule_data_new.angular_velocity=angular_velocity;
+    granule_data_new.velocity=velocity*0.99;
+    granule_data_new.angular_velocity=angular_velocity*0.99;
     granule_data_new.quaternion=quaternion;
     
     
@@ -245,7 +249,7 @@ void UpdateParticle(uint particleIndex,granule_data_type granule_data)
 {
     float3x3 rotation_matrix = QuaternionToMatrix(granule_data.quaternion);
     float3 particle_position=granule_data.position+mul(rotation_matrix,get_particle_position_offset(particleIndex));
-    float3 particle_velocity=granule_data.velocity+cross(granule_data.angular_velocity,particle_position-granule_data.position);
+    float3 particle_velocity=granule_data.velocity+cross(granule_data.angular_velocity,get_particle_position_offset(particleIndex));
 
     set_next_state_particle_position(particleIndex,particle_position);
     set_next_state_particle_velocity(particleIndex,particle_velocity);
@@ -292,9 +296,16 @@ float3 calculate_contact_force_with_plane(const uint particle_index, const float
         for (uint y=y_min_index;y<=y_max_index;y++)
         {
             const float3 pos_in_world=plane_data.origin+a_axis*x*plane_data.particle_radius*2+b_axis*y*plane_data.particle_radius*2;
-            if (distance(particle_position,pos_in_world)<R)
+            if (distance(particle_position,pos_in_world)<R+plane_data.particle_radius)
             {
-                res+=calculate_contact_force_between_two_particle(particle_position,pos_in_world,particle_velocity,float3(0,0,0),R,plane_data.particle_radius);
+                 
+                float3 force=calculate_contact_force_between_two_particle(particle_position,pos_in_world,particle_velocity,float3(0,0,0),R,plane_data.particle_radius);
+                res+=force;
+                #ifdef DEBUG
+                debug_append_structured_buffer.Append(pos_in_world);
+                debug_append_structured_buffer.Append(particle_position);
+                debug_append_structured_buffer.Append(force);
+                #endif
             }
         }
     
@@ -313,11 +324,11 @@ float3 calculate_contact_force_between_two_particle(const uint particle_index1,c
 
 float3 calculate_contact_force_between_two_particle(const float3 particle_position1,const float3 particle_position2,const float3 particle_velocity1,const float3 particle_velocity2,const float R1,const float R2)
 {
-    const float3 particle_2_relative_position=particle_position2-particle_position1;
-    const float distance_between_particles=length(particle_2_relative_position);
+    const float3 relative_position=particle_position1-particle_position2;
+    const float distance_between_particles=length(relative_position);
     const float overlap_normal=R1+R2-distance_between_particles;
     if (overlap_normal<=0)return float3(0,0,0);
-    const float3 normal_unit_vector=particle_2_relative_position/distance_between_particles;
+    const float3 normal_unit_vector=relative_position/distance_between_particles;
     const float3 r1=(R1-overlap_normal/2)*normal_unit_vector;
     const float3 r2=-(R2-overlap_normal/2)*normal_unit_vector;
     const float3 contact_point=particle_position1+r1;
@@ -328,14 +339,15 @@ float3 calculate_contact_force_between_two_particle(const float3 particle_positi
     const float3 v_relative_tangent=v_relative-v_relative_normal;
 
     //计算法向力
-    const float f_n=-(-k_d*pow(overlap_normal,0.5)*length(v_relative_normal)-k_r*pow(overlap_normal,1.5));
+    const float half_pow_of_overlap_normal=pow(overlap_normal,0.5);
+    const float f_n=-(-k_d*half_pow_of_overlap_normal*length(v_relative_normal)-k_r*half_pow_of_overlap_normal*overlap_normal);
     const float3 f_n_vector=f_n*normal_unit_vector;
 
     //计算切向力
     const float f_t=-min(mu*f_n,k_t*length(v_relative_tangent));
     const float3 f_t_vector=f_t*normalize(v_relative_tangent);
     
-    return f_n_vector;
+    return f_n_vector+f_t_vector;
 }
 
 //链表改为排序
