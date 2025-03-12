@@ -57,9 +57,12 @@ namespace GraduationDesign
             public Vector3 Velocity;
             public Vector3 AngularVelocity;
             public Quaternion Rotation;
+            public uint ParticleIndexBegin;
+            public uint ParticleIndexEnd;
+            public uint InitialInertiaTensorIndex;
             public static int GetSize()
             {
-                return sizeof(float) * 3 * 3 + sizeof(float) * 4;
+                return sizeof(float) * 3 * 3 + sizeof(float) * 4 + sizeof(uint) * 3;
             }
         }
         
@@ -68,7 +71,7 @@ namespace GraduationDesign
         private int _currentGranuleCount=>_currentSandCount; //当前一共的颗粒数量
         private int _currentParticleCount=>_currentSandCount*4; //当前一共的粒子数量
         private int _bufferIndexBegin;
-        private Matrix4x4 _I_inverse_initial;
+        public List<Matrix4x4> inertia_tensor_list;
         //-----------------沙粒渲染-----------------//
         private RenderParams _renderParams;
         private GraphicsBuffer _commandBuffer;
@@ -90,6 +93,9 @@ namespace GraduationDesign
             ComputeBuffer _particleVelocityBuffer = new ComputeBuffer(MaxParticleCount*2,sizeof(float)*3);        //粒子速度
             ComputeBuffer _granuleDataBuffer = new ComputeBuffer(MaxGranuleCount*2,GranuleDataType.GetSize());      //颗粒数据
             ComputeBuffer _planeDataBuffer = new ComputeBuffer(PlaneRegister.plane_data.Count,PlaneRegister.plane_data_type.GetSize());
+            ComputeBuffer _inertia_tensor_rw_structured_buffer=new ComputeBuffer(inertia_tensor_list.Count,sizeof(float) * 4 * 4);
+            ComputeBuffer _particle_index_to_granule_index_rw_structured_buffer=new ComputeBuffer(MaxParticleCount,sizeof(uint));
+            ComputeBuffer _particle_initial_offset_rw_structured_buffer=new ComputeBuffer(MaxParticleCount,sizeof(float)*3);
             
             #if DEBUG_APPEND
             ComputeBuffer _debug_append_structured_buffer = new ComputeBuffer(100,sizeof(float)*3,ComputeBufferType.Append);
@@ -99,6 +105,9 @@ namespace GraduationDesign
             AddComputeBuffer("particle_velocity_rw_structured_buffer",_particleVelocityBuffer);
             AddComputeBuffer("granule_data_rw_structured_buffer",_granuleDataBuffer);
             AddComputeBuffer("plane_data_rw_structured_buffer",_planeDataBuffer);
+            AddComputeBuffer("inertia_tensor_rw_structured_buffer",_inertia_tensor_rw_structured_buffer);
+            AddComputeBuffer("particle_index_to_granule_index_rw_structured_buffer",_particle_index_to_granule_index_rw_structured_buffer);
+            AddComputeBuffer("particle_initial_offset_rw_structured_buffer",_particle_initial_offset_rw_structured_buffer);
             #if DEBUG_APPEND
             AddComputeBuffer("debug_append_structured_buffer",_debug_append_structured_buffer);
             #endif
@@ -139,20 +148,30 @@ namespace GraduationDesign
         }
         private void InitNonDynamicAddData()
         {
-            //---------------初始化Granule Data---------------//
+            //---------------初始化Sand Granule Data---------------//
             GranuleDataType[] granuleData = new GranuleDataType[_buffers["granule_data_rw_structured_buffer"].count];
             Vector3[] particlePosition = new Vector3[_buffers["particle_position_rw_structured_buffer"].count];
             Vector3[] particleVelocity = new Vector3[_buffers["particle_velocity_rw_structured_buffer"].count];
+            uint[] particleIndexToGranuleIndex = new uint[_buffers["particle_index_to_granule_index_rw_structured_buffer"].count];
+            Vector3[] particleInitialOffset = new Vector3[_buffers["particle_initial_offset_rw_structured_buffer"].count];
             for (int i = 0; i < granuleData.Length; i++)
             {
                 granuleData[i].Position = new Vector3(Random.Range(-9f, 9f), Random.Range(1f,5f), Random.Range(-9f, 9f));
                 granuleData[i].Velocity = Random.onUnitSphere;
                 granuleData[i].AngularVelocity = Vector3.zero;
                 granuleData[i].Rotation = Quaternion.identity;
+                granuleData[i].ParticleIndexBegin = (uint)((i * 4)%MaxParticleCount);
+                granuleData[i].ParticleIndexEnd = (uint)((i * 4 + 3)%MaxParticleCount);
+                granuleData[i].InitialInertiaTensorIndex = 0;           //因为沙粒的模型都是一样的。所以这里直接设置为0
                 for(int j=0;j<4;j++)
                 {
-                    particlePosition[i*4+j] = granuleData[i].Position + _tetrahedronVertices[j] * particleRadius;
-                    particleVelocity[i*4+j] = granuleData[i].Velocity;          //TODO:这里严格来说是有问题的，需要考虑Granule的角速度对粒子速度的影响
+                    uint index = (uint)(i * 4 + j);
+                    particlePosition[index] = granuleData[i].Position + _tetrahedronVertices[j] * particleRadius;
+                    particleVelocity[index] = granuleData[i].Velocity;          //TODO:这里严格来说是有问题的，需要考虑Granule的角速度对粒子速度的影响
+                    if(index<particleIndexToGranuleIndex.Length)
+                        particleIndexToGranuleIndex[index] = (uint)i;
+                    if(index<particleInitialOffset.Length)
+                        particleInitialOffset[index] = _tetrahedronVertices[j] * particleRadius;
                 }
             }
 
@@ -164,9 +183,10 @@ namespace GraduationDesign
             _buffers["particle_position_rw_structured_buffer"].SetData(particlePosition);
             _buffers["particle_velocity_rw_structured_buffer"].SetData(particleVelocity);
             _buffers["plane_data_rw_structured_buffer"].SetData(PlaneRegister.plane_data.ToArray());
+            _buffers["inertia_tensor_rw_structured_buffer"].SetData(inertia_tensor_list.ToArray());
+            _buffers["particle_index_to_granule_index_rw_structured_buffer"].SetData(particleIndexToGranuleIndex);
+            _buffers["particle_initial_offset_rw_structured_buffer"].SetData(particleInitialOffset);
             
-            //---------------设置参数---------------//
-            _I_inverse_initial = CalculateRefererenceInertiaTensor().inverse;
             
             //---------------添加参数ID---------------//
             AddId("delta_time");
@@ -185,6 +205,11 @@ namespace GraduationDesign
             AddId("plane_count");
             AddId("I_inverse_initial");
 
+        }
+
+        private void Awake()
+        {
+            inertia_tensor_list.Add(CalculateRefererenceInertiaTensor().inverse);
         }
 
         private void Start()
@@ -263,7 +288,6 @@ namespace GraduationDesign
             cs.SetFloat(shaderParameterIds["k_t"], tangentialStiffnessCoefficient);
             cs.SetFloat(shaderParameterIds["mu"], frictionCoefficient);
             cs.SetInt(shaderParameterIds["plane_count"], PlaneRegister.plane_data.Count);
-            cs.SetMatrix(shaderParameterIds["I_inverse_initial"], _I_inverse_initial);
             
             //-----------------设置Buffer-----------------//
             
@@ -272,6 +296,9 @@ namespace GraduationDesign
             ComputeShaderSetBuffer("CSMain","particle_velocity_rw_structured_buffer");
             ComputeShaderSetBuffer("CSMain","granule_data_rw_structured_buffer");
             ComputeShaderSetBuffer("CSMain","plane_data_rw_structured_buffer");
+            ComputeShaderSetBuffer("CSMain","inertia_tensor_rw_structured_buffer");
+            ComputeShaderSetBuffer("CSMain","particle_index_to_granule_index_rw_structured_buffer");
+            ComputeShaderSetBuffer("CSMain","particle_initial_offset_rw_structured_buffer");
             #if DEBUG_APPEND
             ComputeShaderSetBuffer("CSMain","debug_append_structured_buffer");
             #endif
@@ -329,7 +356,6 @@ namespace GraduationDesign
                 I_ref[2, 2] -= vertexMass * _tetrahedronVertices[i][2] * _tetrahedronVertices[i][2];
             }
             I_ref[3, 3] = 1;                
-            Debug.Log("I_ref: " + I_ref);
             return I_ref;
         }
         private void Update()

@@ -583,7 +583,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 27d838a4694cb5a4183f7485a7b8dfe6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxSandCount: 2048
+  maxSandCount: 128
   particleRadius: 0.1
   particleMass: 1
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
@@ -595,6 +595,7 @@ MonoBehaviour:
   tangentialStiffnessCoefficient: 500
   material: {fileID: 2100000, guid: 1efb0a9e5bd905949ab352e2fa33a023, type: 2}
   deltaTime: 0.01
+  inertia_tensor_list: []
 --- !u!4 &190869049
 Transform:
   m_ObjectHideFlags: 0

@@ -8,6 +8,9 @@ struct granule_data_type
     float3 velocity;
     float3 angular_velocity;
     float4 quaternion;
+    uint particle_index_begin;
+    uint particle_index_end;
+    uint initial_inertia_tensor_index;
 };
 
 struct plane_data_type
@@ -25,6 +28,9 @@ RWStructuredBuffer<float3> particle_velocity_rw_structured_buffer;              
 RWStructuredBuffer<granule_data_type> granule_data_rw_structured_buffer;                            //Granule数据
 ConsumeStructuredBuffer<granule_data_type> granule_data_consume_structured_buffer;                  //Granule数据，用于动态添加
 RWStructuredBuffer<plane_data_type> plane_data_rw_structured_buffer;                                //平面数据
+RWStructuredBuffer<float4x4> inertia_tensor_rw_structured_buffer;                                   //转动惯量
+RWStructuredBuffer<uint> particle_index_to_granule_index_rw_structured_buffer;                      //粒子索引到Granule索引的映射
+RWStructuredBuffer<float3> particle_initial_offset_rw_structured_buffer;                            //粒子初始位置偏移
 #ifdef DEBUG
 AppendStructuredBuffer<float3> debug_append_structured_buffer;                                      //for debug
 #endif
@@ -60,7 +66,6 @@ uint get_now_granule_index(uint granule_index);
 uint get_next_state_particle_index(uint particle_index);
 uint get_next_state_granule_index(uint granule_index);
 uint get_granule_index_of_particle(uint particle_index);
-uint get_first_particle_index_of_granule(uint granule_index);
 float3 get_particle_position_offset(uint particle_index);                                           //获取粒子位置偏移(相对于Granule)
 float3x3 QuaternionToMatrix(float4 quaternion);                                                      //四元数转矩阵
 void Simulation(uint3 granuleIndex : SV_DispatchThreadID);
@@ -83,12 +88,6 @@ static const int3 grid_offset[27] = {
     int3(1,-1,-1),int3(1,-1,0),int3(1,-1,1),
     int3(1,0,-1),int3(1,0,0),int3(1,0,1),
     int3(1,1,-1),int3(1,1,0),int3(1,1,1)
-};
-static const float3 tetrahedron[4] = {                        
-    float3(1,0,-1/sqrt(2)),
-    float3(-1,0,-1/sqrt(2)),
-    float3(0,1,1/sqrt(2)),
-    float3(0,-1,1/sqrt(2))
 };
 static const float3 g = float3(0,-9.8,0);
 
@@ -149,15 +148,11 @@ uint get_next_state_granule_index(uint granule_index)
 }
 uint get_granule_index_of_particle(uint particle_index)
 {
-    return particle_index/4;
-}
-uint get_first_particle_index_of_granule(uint granule_index)
-{
-    return granule_index*4;
+    return particle_index_to_granule_index_rw_structured_buffer[particle_index%max_particle_count];
 }
 float3 get_particle_position_offset(uint particle_index)
 {
-    return tetrahedron[particle_index%4]*particle_radius;
+    return particle_initial_offset_rw_structured_buffer[particle_index%max_particle_count];
 }
 float3x3 QuaternionToMatrix(float4 quaternion)
 {
@@ -206,7 +201,7 @@ void UpdateGranule(uint granuleIndex)
         return;
     }
     
-    const granule_data_type granule_data = get_now_granule_data(granuleIndex);
+    /*const granule_data_type granule_data = get_now_granule_data(granuleIndex);
     const uint first_particle_index=get_first_particle_index_of_granule(granuleIndex);
     const float3 force1=get_particle_force(first_particle_index);
     const float3 force2=get_particle_force(first_particle_index+1);
@@ -233,10 +228,41 @@ void UpdateGranule(uint granuleIndex)
     granule_data_new.position=position;
     granule_data_new.velocity=velocity*0.99;
     granule_data_new.angular_velocity=angular_velocity*0.99;
-    granule_data_new.quaternion=quaternion;
-    
-    
+    granule_data_new.quaternion=quaternion;*/
+    const granule_data_type granule_data= get_now_granule_data(granuleIndex);
+    const uint first_particle_index=get_now_particle_index(granule_data.particle_index_begin);
+    const uint last_particle_index=get_now_particle_index(granule_data.particle_index_end);
+    float3 sum_force=float3(0,0,0);
+    float3 sum_torque=float3(0,0,0);
+    float3 particle_force=float3(0,0,0);
+    for (uint i=first_particle_index;i<=last_particle_index;i++)
+    {
+        particle_force=get_particle_force(i);
+        sum_force+=particle_force;
+        sum_torque+=cross(get_now_particle_position(i)-granule_data.position,particle_force);
+    }
 
+    const float3x3 rotation_matrix=QuaternionToMatrix(granule_data.quaternion);
+    const float3x3 I_ref_inv={inertia_tensor_rw_structured_buffer[granule_data.initial_inertia_tensor_index][0][0],inertia_tensor_rw_structured_buffer[granule_data.initial_inertia_tensor_index][0][1],inertia_tensor_rw_structured_buffer[granule_data.initial_inertia_tensor_index][0][2],
+                              inertia_tensor_rw_structured_buffer[granule_data.initial_inertia_tensor_index][1][0],inertia_tensor_rw_structured_buffer[granule_data.initial_inertia_tensor_index][1][1],inertia_tensor_rw_structured_buffer[granule_data.initial_inertia_tensor_index][1][2],
+                              inertia_tensor_rw_structured_buffer[granule_data.initial_inertia_tensor_index][2][0],inertia_tensor_rw_structured_buffer[granule_data.initial_inertia_tensor_index][2][1],inertia_tensor_rw_structured_buffer[granule_data.initial_inertia_tensor_index][2][2]};
+
+    const float3x3 I_inv=mul(rotation_matrix,mul(I_ref_inv,transpose(rotation_matrix)));
+    const float3 angular_acceleration=mul(I_inv,sum_torque);
+    const float3 angular_velocity=granule_data.angular_velocity+angular_acceleration*delta_time;
+    const float3 acceleration=sum_force/particle_mass/(last_particle_index-first_particle_index+1);
+    const float3 velocity=granule_data.velocity+acceleration*delta_time;
+    const float3 position=granule_data.position+velocity*delta_time;
+    const float4 quaternion=normalize(granule_data.quaternion+quaternionMul(float4(0,angular_velocity),granule_data.quaternion)*delta_time*0.5);
+    granule_data_type granule_data_new;
+    granule_data_new.position=position;
+    granule_data_new.velocity=velocity*0.99;
+    granule_data_new.angular_velocity=angular_velocity*0.99;
+    granule_data_new.quaternion=quaternion;
+    granule_data_new.particle_index_begin=granule_data.particle_index_begin;
+    granule_data_new.particle_index_end=granule_data.particle_index_end;
+    granule_data_new.initial_inertia_tensor_index=granule_data.initial_inertia_tensor_index;
+    
     set_next_state_granule_data(granuleIndex,granule_data_new);
     
     UpdateParticle(first_particle_index,granule_data_new);
@@ -258,11 +284,12 @@ void UpdateParticle(uint particleIndex,granule_data_type granule_data)
 float3 get_particle_force(uint particle_index)
 {
     float3 res=particle_mass*g;
-    for(uint i=0;i<current_particle_count;i++)
+    uint i;
+    for(i=0;i<current_particle_count;i++)
     {
         res+=calculate_contact_force_between_two_particle(particle_index,i,particle_radius,particle_radius);
     }
-    for(uint i=0;i<plane_count;i++)
+    for(i=0;i<plane_count;i++)
     {
         res+=calculate_contact_force_with_plane(particle_index,particle_radius,i);
     }
