@@ -49,7 +49,6 @@ float k_d;                                                                      
 float k_r;                                                                                          //elastic restoration coefficient(弹性恢复系数)
 float mu;                                                                                           //friction coefficient(摩擦系数)
 float k_t;                                                                                          //tangential stiffness coefficient(切向刚度系数)
-float4x4 I_inverse_initial;                                                                         //初始转动惯量的逆矩阵
 uint plane_count;                                                                                   //平面数量
 //--------------函数定义----------------//
 float3 get_now_particle_position(uint index);
@@ -201,37 +200,9 @@ void UpdateGranule(uint granuleIndex)
         return;
     }
     
-    /*const granule_data_type granule_data = get_now_granule_data(granuleIndex);
-    const uint first_particle_index=get_first_particle_index_of_granule(granuleIndex);
-    const float3 force1=get_particle_force(first_particle_index);
-    const float3 force2=get_particle_force(first_particle_index+1);
-    const float3 force3=get_particle_force(first_particle_index+2);
-    const float3 force4=get_particle_force(first_particle_index+3);
-
-    const float3 sum_force=force1+force2+force3+force4;
-    const float3 particle_position_offset1=get_now_particle_position(first_particle_index)-granule_data.position;
-    const float3 particle_position_offset2=get_now_particle_position(first_particle_index+1)-granule_data.position;
-    const float3 particle_position_offset3=get_now_particle_position(first_particle_index+2)-granule_data.position;
-    const float3 particle_position_offset4=get_now_particle_position(first_particle_index+3)-granule_data.position;
-    const float3 torque=cross(particle_position_offset1,force1)+cross(particle_position_offset2,force2)+cross(particle_position_offset3,force3)+cross(particle_position_offset4,force4);
-    const float3x3 rotation_matrix = QuaternionToMatrix(granule_data.quaternion);
-    const float3x3 I_ref_inv={I_inverse_initial[0][0],I_inverse_initial[0][1],I_inverse_initial[0][2],
-                              I_inverse_initial[1][0],I_inverse_initial[1][1],I_inverse_initial[1][2],
-                              I_inverse_initial[2][0],I_inverse_initial[2][1],I_inverse_initial[2][2]};
-    const float3x3 I_inv=mul(rotation_matrix,mul(I_ref_inv,transpose(rotation_matrix)));
-    const float3 angular_acceleration=mul(I_inv,torque);
-    const float3 angular_velocity=granule_data.angular_velocity+angular_acceleration*delta_time;
-    const float3 velocity=granule_data.velocity+sum_force/particle_mass/4*delta_time;
-    const float3 position=granule_data.position+velocity*delta_time;
-    const float4 quaternion=normalize(granule_data.quaternion+quaternionMul(float4(0,angular_velocity),granule_data.quaternion)*delta_time*0.5);
-    granule_data_type granule_data_new;
-    granule_data_new.position=position;
-    granule_data_new.velocity=velocity*0.99;
-    granule_data_new.angular_velocity=angular_velocity*0.99;
-    granule_data_new.quaternion=quaternion;*/
     const granule_data_type granule_data= get_now_granule_data(granuleIndex);
-    const uint first_particle_index=get_now_particle_index(granule_data.particle_index_begin);
-    const uint last_particle_index=get_now_particle_index(granule_data.particle_index_end);
+    const uint first_particle_index=granule_data.particle_index_begin;
+    const uint last_particle_index=granule_data.particle_index_end;
     float3 sum_force=float3(0,0,0);
     float3 sum_torque=float3(0,0,0);
     float3 particle_force=float3(0,0,0);
