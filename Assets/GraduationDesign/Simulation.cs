@@ -4,6 +4,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
@@ -51,7 +52,7 @@ namespace GraduationDesign
             new Vector3(0,-1,1/(float)Math.Sqrt(2))
         };
         
-        private struct GranuleDataType
+        public struct GranuleDataType
         {
             public Vector3 Position;
             public Vector3 Velocity;
@@ -209,7 +210,7 @@ namespace GraduationDesign
 
         private void Awake()
         {
-            inertia_tensor_list.Add(CalculateRefererenceInertiaTensor().inverse);
+            inertia_tensor_list.Add(CalculateRefererenceInertiaTensor(_tetrahedronVertices.ToList()).inverse);
         }
 
         private void Start()
@@ -334,30 +335,29 @@ namespace GraduationDesign
             #endif
 
         }
-        Matrix4x4 CalculateRefererenceInertiaTensor()
+        Matrix4x4 CalculateRefererenceInertiaTensor(List<Vector3> vertices)
         {
-            Mesh sphereMesh = mesh;
-            Vector3[] vertices = sphereMesh.vertices;
             Matrix4x4 I_ref = Matrix4x4.zero;
             float vertexMass = particleMass;
-            for (int i = 0; i < _tetrahedronVertices.Length; i++)
+            for (int i = 0; i < vertices.Count; i++)
             {
-                I_ref[0, 0] += vertexMass * _tetrahedronVertices[i].sqrMagnitude;
-                I_ref[1, 1] += vertexMass * _tetrahedronVertices[i].sqrMagnitude;
-                I_ref[2, 2] += vertexMass * _tetrahedronVertices[i].sqrMagnitude;
-                I_ref[0, 0] -= vertexMass * _tetrahedronVertices[i][0] * _tetrahedronVertices[i][0];
-                I_ref[0, 1] -= vertexMass * _tetrahedronVertices[i][0] * _tetrahedronVertices[i][1];
-                I_ref[0, 2] -= vertexMass * _tetrahedronVertices[i][0] * _tetrahedronVertices[i][2];
-                I_ref[1, 0] -= vertexMass * _tetrahedronVertices[i][1] * _tetrahedronVertices[i][0];
-                I_ref[1, 1] -= vertexMass * _tetrahedronVertices[i][1] * _tetrahedronVertices[i][1];
-                I_ref[1, 2] -= vertexMass * _tetrahedronVertices[i][1] * _tetrahedronVertices[i][2];
-                I_ref[2, 0] -= vertexMass * _tetrahedronVertices[i][2] * _tetrahedronVertices[i][0];
-                I_ref[2, 1] -= vertexMass * _tetrahedronVertices[i][2] * _tetrahedronVertices[i][1];
-                I_ref[2, 2] -= vertexMass * _tetrahedronVertices[i][2] * _tetrahedronVertices[i][2];
+                I_ref[0, 0] += vertexMass * vertices[i].sqrMagnitude;
+                I_ref[1, 1] += vertexMass * vertices[i].sqrMagnitude;
+                I_ref[2, 2] += vertexMass * vertices[i].sqrMagnitude;
+                I_ref[0, 0] -= vertexMass * vertices[i][0] * vertices[i][0];
+                I_ref[0, 1] -= vertexMass * vertices[i][0] * vertices[i][1];
+                I_ref[0, 2] -= vertexMass * vertices[i][0] * vertices[i][2];
+                I_ref[1, 0] -= vertexMass * vertices[i][1] * vertices[i][0];
+                I_ref[1, 1] -= vertexMass * vertices[i][1] * vertices[i][1];
+                I_ref[1, 2] -= vertexMass * vertices[i][1] * vertices[i][2];
+                I_ref[2, 0] -= vertexMass * vertices[i][2] * vertices[i][0];
+                I_ref[2, 1] -= vertexMass * vertices[i][2] * vertices[i][1];
+                I_ref[2, 2] -= vertexMass * vertices[i][2] * vertices[i][2];
             }
             I_ref[3, 3] = 1;                
             return I_ref;
         }
+
         private void Update()
         {
             ProcessRender();
