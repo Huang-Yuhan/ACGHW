@@ -6,6 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Serialization;
 using Random = UnityEngine.Random;
 
 
@@ -13,10 +14,12 @@ namespace GraduationDesign
 {
     public class Simulation : MonoBehaviour
     {
-        [Header("沙粒属性")]
-        public int maxSandCount;
-        public int MaxGranuleCount => maxSandCount;
-        public int MaxParticleCount => maxSandCount * 4;
+        [FormerlySerializedAs("maxSandCount")] [Header("沙粒属性")]
+        public int maxSandSandCount;
+        public int MaxSandGranuleCount => maxSandSandCount;
+        public int MaxGranuleCount=>MaxSandGranuleCount+RigidBodyRegister.RigidBodyData.Count;
+        public int MaxSandParticleCount => maxSandSandCount * 4;
+        public int MaxParticleCount => MaxGranuleCount * 4;
         public float particleRadius;
         public float particleMass;
         public Mesh mesh;
@@ -155,20 +158,20 @@ namespace GraduationDesign
             Vector3[] particleVelocity = new Vector3[_buffers["particle_velocity_rw_structured_buffer"].count];
             uint[] particleIndexToGranuleIndex = new uint[_buffers["particle_index_to_granule_index_rw_structured_buffer"].count];
             Vector3[] particleInitialOffset = new Vector3[_buffers["particle_initial_offset_rw_structured_buffer"].count];
-            for (int i = 0; i < granuleData.Length; i++)
+            for (int i = 0; i < MaxSandGranuleCount; i++)
             {
                 granuleData[i].Position = new Vector3(Random.Range(-9f, 9f), Random.Range(1f,5f), Random.Range(-9f, 9f));
                 granuleData[i].Velocity = Random.onUnitSphere;
                 granuleData[i].AngularVelocity = Vector3.zero;
                 granuleData[i].Rotation = Quaternion.identity;
-                granuleData[i].ParticleIndexBegin = (uint)((i * 4)%MaxParticleCount);
-                granuleData[i].ParticleIndexEnd = (uint)((i * 4 + 3)%MaxParticleCount);
+                granuleData[i].ParticleIndexBegin = (uint)((i * 4)%MaxSandParticleCount);
+                granuleData[i].ParticleIndexEnd = (uint)((i * 4 + 3)%MaxSandParticleCount);
                 granuleData[i].InitialInertiaTensorIndex = 0;           //因为沙粒的模型都是一样的。所以这里直接设置为0
                 for(int j=0;j<4;j++)
                 {
                     uint index = (uint)(i * 4 + j);
                     particlePosition[index] = granuleData[i].Position + _tetrahedronVertices[j] * particleRadius;
-                    particleVelocity[index] = granuleData[i].Velocity;          //TODO:这里严格来说是有问题的，需要考虑Granule的角速度对粒子速度的影响
+                    particleVelocity[index] = granuleData[i].Velocity;          
                     if(index<particleIndexToGranuleIndex.Length)
                         particleIndexToGranuleIndex[index] = (uint)i;
                     if(index<particleInitialOffset.Length)
@@ -176,8 +179,38 @@ namespace GraduationDesign
                 }
             }
 
-            _currentSandCount = maxSandCount;
+            _currentSandCount = maxSandSandCount;
             _bufferIndexBegin = 0;
+            
+            int preGranuleCount = MaxSandGranuleCount;
+            int preParticleCount = MaxSandParticleCount;
+            
+            //---------------初始化RigidBody Data---------------//
+            for (int i = 0; i < RigidBodyRegister.RigidBodyData.Count; i++)
+            {
+                GranuleDataType data = new GranuleDataType();
+                data.Position = RigidBodyRegister.RigidBodyData[i].Position;
+                data.Velocity = RigidBodyRegister.RigidBodyData[i].Velocity;
+                data.AngularVelocity = RigidBodyRegister.RigidBodyData[i].AngularVelocity;
+                data.Rotation = RigidBodyRegister.RigidBodyData[i].Rotation;
+                data.ParticleIndexBegin = (uint)(preParticleCount);
+                data.ParticleIndexEnd = (uint)(preParticleCount+RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset.Count);
+                data.InitialInertiaTensorIndex = (uint)(inertia_tensor_list.Count);
+                inertia_tensor_list.Add(CalculateRefererenceInertiaTensor(RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset));
+                granuleData[preGranuleCount + i] = data;
+                for (int j = 0; j < RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset.Count; j++)
+                {
+                    uint index = (uint)(preParticleCount + j);
+                    particlePosition[index] = RigidBodyRegister.RigidBodyData[i].Position + RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset[j];
+                    particleVelocity[index] = RigidBodyRegister.RigidBodyData[i].Velocity;
+                    if(index<particleIndexToGranuleIndex.Length)
+                        particleIndexToGranuleIndex[index] = (uint)(preGranuleCount+i);
+                    if(index<particleInitialOffset.Length)
+                        particleInitialOffset[index] = RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset[j];
+                }
+                preParticleCount += RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset.Count;
+                preGranuleCount++;
+            }
             
             //---------------设置Buffer Data---------------//
             _buffers["granule_data_rw_structured_buffer"].SetData(granuleData);
@@ -278,9 +311,9 @@ namespace GraduationDesign
             //-----------------设置参数-----------------//
             cs.SetFloat(shaderParameterIds["delta_time"], deltaTime);
             cs.SetInt(shaderParameterIds["current_granule_count"], _currentGranuleCount);
-            cs.SetInt(shaderParameterIds["max_granule_count"], MaxGranuleCount);
+            cs.SetInt(shaderParameterIds["max_granule_count"], MaxSandGranuleCount);
             cs.SetInt(shaderParameterIds["current_particle_count"], _currentParticleCount);
-            cs.SetInt(shaderParameterIds["max_particle_count"], MaxParticleCount);
+            cs.SetInt(shaderParameterIds["max_particle_count"], MaxSandParticleCount);
             cs.SetFloat(shaderParameterIds["particle_mass"], particleMass);
             cs.SetFloat(shaderParameterIds["particle_radius"], particleRadius);
             cs.SetInt(shaderParameterIds["buffer_index_begin"], _bufferIndexBegin);
@@ -310,7 +343,7 @@ namespace GraduationDesign
             cs.Dispatch(_kernels["CSMain"],Mathf.CeilToInt(_currentGranuleCount/32f), 1, 1);
             
             //DEBUG:
-            // GranuleDataType[] granuleData = new GranuleDataType[MaxGranuleCount * 2];
+            // GranuleDataType[] granuleData = new GranuleDataType[MaxSandGranuleCount * 2];
             // _buffers["granule_data_rw_structured_buffer"].GetData(granuleData);
             // for(int i=0;i<granuleData.Length;i++)
             //     Debug.LogFormat("position:{0},velocity:{1},angularVelocity:{2},rotation:{3}",granuleData[i].Position,granuleData[i].Velocity,granuleData[i].AngularVelocity,granuleData[i].Rotation);

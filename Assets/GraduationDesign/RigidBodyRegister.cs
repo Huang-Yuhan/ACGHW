@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -24,6 +25,16 @@ namespace GraduationDesign
         
         public BodyType bodyType = BodyType.Cube;  
         public float particle_radius = 0.1f;
+
+        private void Awake()
+        {
+            switch (bodyType)
+            {
+                case BodyType.Cube:
+                    RigidBodyData.Add(GenerateCube());
+                    break;
+            }
+        }
 
         RegisterDataType GenerateCube()
         {
