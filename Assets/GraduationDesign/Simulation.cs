@@ -1,5 +1,5 @@
 #define DEBUG_APPEND
-//#undef DEBUG_APPEND 
+#undef DEBUG_APPEND 
 
 using System;
 using System.Collections;
@@ -67,7 +67,7 @@ namespace GraduationDesign
             public float ParticleRadius;
             public static int GetSize()
             {
-                return sizeof(float) * 3 * 3 + sizeof(float) * 4 + sizeof(uint) * 3+sizeof(float);
+                return sizeof(float) * 3 * 3 + sizeof(float) * 4 + sizeof(uint) * 3 + sizeof(float);
             }
         }
         
@@ -124,8 +124,9 @@ namespace GraduationDesign
             
             
             //---------------Add Kernels---------------//
-            AddKernel("CSMain");
-            AddKernel("ForceCalculation");
+            AddKernel("UpdateGranuleKernel");
+            AddKernel("ForceCalculationKernel");
+            AddKernel("UpdateParticleKernel");
         }
 
         private void InitRender()
@@ -335,47 +336,89 @@ namespace GraduationDesign
             cs.SetFloat(shaderParameterIds["mu"], frictionCoefficient);
             cs.SetInt(shaderParameterIds["plane_count"], PlaneRegister.plane_data.Count);
             //-----------------Force Calculation-----------------//
-            ComputeShaderSetBuffer("ForceCalculation","particle_position_rw_structured_buffer");
-            ComputeShaderSetBuffer("ForceCalculation","particle_velocity_rw_structured_buffer");
-            ComputeShaderSetBuffer("ForceCalculation","granule_data_rw_structured_buffer");
-            ComputeShaderSetBuffer("ForceCalculation","plane_data_rw_structured_buffer");
-            ComputeShaderSetBuffer("ForceCalculation","inertia_tensor_rw_structured_buffer");
-            ComputeShaderSetBuffer("ForceCalculation","particle_index_to_granule_index_rw_structured_buffer");
-            ComputeShaderSetBuffer("ForceCalculation","particle_initial_offset_rw_structured_buffer");
-            ComputeShaderSetBuffer("ForceCalculation","particle_contact_force_rw_structured_buffer");
+            ComputeShaderSetBuffer("ForceCalculationKernel","particle_position_rw_structured_buffer");
+            ComputeShaderSetBuffer("ForceCalculationKernel","particle_velocity_rw_structured_buffer");
+            ComputeShaderSetBuffer("ForceCalculationKernel","granule_data_rw_structured_buffer");
+            ComputeShaderSetBuffer("ForceCalculationKernel","plane_data_rw_structured_buffer");
+            ComputeShaderSetBuffer("ForceCalculationKernel","inertia_tensor_rw_structured_buffer");
+            ComputeShaderSetBuffer("ForceCalculationKernel","particle_index_to_granule_index_rw_structured_buffer");
+            ComputeShaderSetBuffer("ForceCalculationKernel","particle_initial_offset_rw_structured_buffer");
+            ComputeShaderSetBuffer("ForceCalculationKernel","particle_contact_force_rw_structured_buffer");
 #if DEBUG_APPEND
-            ComputeShaderSetBuffer("ForceCalculation","debug_append_structured_buffer");
+            ComputeShaderSetBuffer("ForceCalculationKernel","debug_append_structured_buffer");
 #endif
     
-            cs.Dispatch(_kernels["ForceCalculation"],Mathf.CeilToInt(_currentParticleCount/32f), 1, 1);
+            cs.Dispatch(_kernels["ForceCalculationKernel"],Mathf.CeilToInt(_currentParticleCount/32f), 1, 1);
             
-            //-----------------设置Buffer-----------------//
+            //-----------------UpdateGranuleKernel-----------------//
             
-            //CSMain 
-            ComputeShaderSetBuffer("CSMain","particle_position_rw_structured_buffer");
-            ComputeShaderSetBuffer("CSMain","particle_velocity_rw_structured_buffer");
-            ComputeShaderSetBuffer("CSMain","granule_data_rw_structured_buffer");
-            ComputeShaderSetBuffer("CSMain","plane_data_rw_structured_buffer");
-            ComputeShaderSetBuffer("CSMain","inertia_tensor_rw_structured_buffer");
-            ComputeShaderSetBuffer("CSMain","particle_index_to_granule_index_rw_structured_buffer");
-            ComputeShaderSetBuffer("CSMain","particle_initial_offset_rw_structured_buffer");
-            ComputeShaderSetBuffer("CSMain","particle_contact_force_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateGranuleKernel","particle_position_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateGranuleKernel","particle_velocity_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateGranuleKernel","granule_data_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateGranuleKernel","plane_data_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateGranuleKernel","inertia_tensor_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateGranuleKernel","particle_index_to_granule_index_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateGranuleKernel","particle_initial_offset_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateGranuleKernel","particle_contact_force_rw_structured_buffer");
 #if DEBUG_APPEND
-            ComputeShaderSetBuffer("CSMain","debug_append_structured_buffer");
+            ComputeShaderSetBuffer("UpdateGranuleKernel","debug_append_structured_buffer");
 #endif
             
             
-            cs.Dispatch(_kernels["CSMain"],Mathf.CeilToInt(_currentGranuleCount/32f), 1, 1);
+            cs.Dispatch(_kernels["UpdateGranuleKernel"],Mathf.CeilToInt(_currentGranuleCount/32f), 1, 1);
+            
+            //-----------------UpdateParticleKernel-----------------//
+            ComputeShaderSetBuffer("UpdateParticleKernel","particle_position_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateParticleKernel","particle_velocity_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateParticleKernel","granule_data_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateParticleKernel","particle_index_to_granule_index_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateParticleKernel","particle_initial_offset_rw_structured_buffer");
+            
+            cs.Dispatch(_kernels["UpdateParticleKernel"],Mathf.CeilToInt(_currentParticleCount/32f), 1, 1);
+ 
+            
+#if DEBUG_APPEND
             
             //Debug
-            Vector3[] particle_position = new Vector3[_currentParticleCount];
+            Vector3[] particle_position = new Vector3[_buffers["particle_position_rw_structured_buffer"].count];
+            Vector3[] particle_velocity = new Vector3[_buffers["particle_velocity_rw_structured_buffer"].count];
             _buffers["particle_position_rw_structured_buffer"].GetData(particle_position);
-            for (int i = 0; i < _currentParticleCount; i++)
+            _buffers["particle_velocity_rw_structured_buffer"].GetData(particle_velocity);
+            uint now_state_begin_index=(uint)(_bufferIndexBegin*_currentParticleCount);
+            uint now_state_end_index=(uint)(now_state_begin_index + _currentParticleCount);
+            uint next_state_begin_index=(uint)((1-_bufferIndexBegin)*_currentParticleCount);
+            uint next_state_end_index=(uint)(next_state_begin_index + _currentParticleCount);
+            
+            Debug.LogFormat("当前状态的粒子状态为:");
+            for(uint i=now_state_begin_index;i<now_state_end_index;i++)
             {
-                Debug.LogFormat("Particle Position: {0}",particle_position[i]);
+                Debug.LogFormat("pos:{0},vel:{1}",particle_position[i],particle_velocity[i]);
+            }
+            Debug.LogFormat("下一状态的粒子状态为:");
+            for(uint i=next_state_begin_index;i<next_state_end_index;i++)
+            {
+                Debug.LogFormat("pos:{0},vel:{1}",particle_position[i],particle_velocity[i]);
+            }
+
+            GranuleDataType[] granule_data = new GranuleDataType[_buffers["granule_data_rw_structured_buffer"].count];
+            _buffers["granule_data_rw_structured_buffer"].GetData(granule_data);
+            now_state_begin_index = (uint)(_bufferIndexBegin * _currentGranuleCount);
+            now_state_end_index = (uint)(now_state_begin_index + _currentGranuleCount);
+            next_state_begin_index = (uint)((1 - _bufferIndexBegin) * _currentGranuleCount);
+            next_state_end_index = (uint)(next_state_begin_index + _currentGranuleCount);
+            
+            Debug.LogFormat("当前状态的颗粒状态为:");
+            for(uint i=now_state_begin_index;i<now_state_end_index;i++)
+            {
+                Debug.LogFormat("{0},{1},{2}",granule_data[i].Position,granule_data[i].Velocity,granule_data[i].AngularVelocity);
+            }
+            Debug.LogFormat("下一状态的颗粒状态为:");
+            for(uint i=next_state_begin_index;i<next_state_end_index;i++)
+            {
+                Debug.LogFormat("{0},{1},{2}",granule_data[i].Position,granule_data[i].Velocity,granule_data[i].AngularVelocity);
             }
             
-            #if DEBUG_APPEND
+            
             ComputeBuffer.CopyCount(_buffers["debug_append_structured_buffer"],_buffers["debug_append_count_buffer"],0);
             int[] debug_append_count = new int[1];
             _buffers["debug_append_count_buffer"].GetData(debug_append_count);
@@ -390,7 +433,7 @@ namespace GraduationDesign
             }
             //清空Append Buffer
             _buffers["debug_append_structured_buffer"].SetCounterValue(0);
-            #endif
+#endif
             
             _bufferIndexBegin=1-_bufferIndexBegin;
 

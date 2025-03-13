@@ -39,6 +39,7 @@ namespace GraduationDesign
         
         public BodyType bodyType = BodyType.Cube;  
         public float particle_radius = 0.1f;
+        public float mass;
 
         private void Awake()
         {
@@ -71,6 +72,7 @@ namespace GraduationDesign
                         {
                             Vector3 position = new Vector3(i * particle_radius * 2, j * particle_radius * 2, k * particle_radius * 2) - transform.localScale / 2;
                             rigidBodiesParticeInitialOffset.Add(position);  
+                            //Debug.LogFormat("{0}",position);
                         }
                     }
                 }

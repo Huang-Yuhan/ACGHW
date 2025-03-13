@@ -1,7 +1,9 @@
 //--------------内核定义----------------//
-#pragma kernel CSMain
-#pragma kernel ForceCalculation
+#pragma kernel ForceCalculationKernel
+#pragma kernel UpdateGranuleKernel
+#pragma kernel UpdateParticleKernel
 #define DEBUG
+#undef DEBUG
 
 
 //--------------基础数据结构定义----------------//
@@ -189,7 +191,7 @@ float4 quaternionMul(float4 q1,float4 q2)
     return result;
 }
 [numthreads(32,1,1)]
-void CSMain (uint3 granuleIndex : SV_DispatchThreadID)
+void UpdateGranuleKernel (uint3 granuleIndex : SV_DispatchThreadID)
 {
     Simulation(granuleIndex);
 }
@@ -217,12 +219,12 @@ void UpdateGranule(uint granuleIndex)
     for (uint i=first_particle_index;i<=last_particle_index;i++)
     {
         particle_force=particle_contact_force_rw_structured_buffer[i];
-        #ifdef DEBUG
-        debug_append_structured_buffer.Append(particle_force);
-        #endif
+
         sum_force+=particle_force;
         sum_torque+=cross(get_now_particle_position(i)-granule_data.position,particle_force);
     }
+
+
 
     const float3x3 rotation_matrix=QuaternionToMatrix(granule_data.quaternion);
     const float3x3 I_ref_inv={inertia_tensor_rw_structured_buffer[granule_data.initial_inertia_tensor_index][0][0],inertia_tensor_rw_structured_buffer[granule_data.initial_inertia_tensor_index][0][1],inertia_tensor_rw_structured_buffer[granule_data.initial_inertia_tensor_index][0][2],
@@ -238,8 +240,8 @@ void UpdateGranule(uint granuleIndex)
     const float4 quaternion=normalize(granule_data.quaternion+quaternionMul(float4(0,angular_velocity),granule_data.quaternion)*delta_time*0.5);
     granule_data_type granule_data_new;
     granule_data_new.position=position;
-    granule_data_new.velocity=velocity*0.99;
-    granule_data_new.angular_velocity=angular_velocity*0.99;
+    granule_data_new.velocity=velocity*0.95;
+    granule_data_new.angular_velocity=angular_velocity*0.95;
     granule_data_new.quaternion=quaternion;
     granule_data_new.particle_index_begin=granule_data.particle_index_begin;
     granule_data_new.particle_index_end=granule_data.particle_index_end;
@@ -248,10 +250,6 @@ void UpdateGranule(uint granuleIndex)
     
     set_next_state_granule_data(granuleIndex,granule_data_new);
     
-    UpdateParticle(first_particle_index,granule_data_new);
-    UpdateParticle(first_particle_index+1,granule_data_new);
-    UpdateParticle(first_particle_index+2,granule_data_new);
-    UpdateParticle(first_particle_index+3,granule_data_new);
 }
 
 void UpdateParticle(uint particleIndex,granule_data_type granule_data)
@@ -360,7 +358,7 @@ float3 calculate_contact_force_between_two_particle(const float3 particle_positi
 //float直接转int比大小
 
 [numthreads(32,1,1)]
-void ForceCalculation(uint3 particleIndex : SV_DispatchThreadID)
+void ForceCalculationKernel(uint3 particleIndex : SV_DispatchThreadID)
 {
     const uint index=particleIndex.x;
     if (index>=current_particle_count)
@@ -370,4 +368,16 @@ void ForceCalculation(uint3 particleIndex : SV_DispatchThreadID)
     const float3 force=get_particle_force(index);
     particle_contact_force_rw_structured_buffer[index]=force;
 
+}
+
+[numthreads(32,1,1)]
+void UpdateParticleKernel(uint3 particleIndex : SV_DispatchThreadID)
+{
+    const uint index=particleIndex.x;
+    if (index>=current_particle_count)
+    {
+        return;
+    }
+    const granule_data_type granule_data=get_now_granule_data(get_granule_index_of_particle(index));
+    UpdateParticle(index,granule_data);
 }
