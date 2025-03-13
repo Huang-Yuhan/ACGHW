@@ -17,6 +17,7 @@ struct granule_data_type
     uint particle_index_end;
     uint initial_inertia_tensor_index;
     float particle_radius;
+    float particle_mass;
 };
 
 struct plane_data_type
@@ -234,7 +235,7 @@ void UpdateGranule(uint granuleIndex)
     const float3x3 I_inv=mul(rotation_matrix,mul(I_ref_inv,transpose(rotation_matrix)));
     const float3 angular_acceleration=mul(I_inv,sum_torque);
     const float3 angular_velocity=granule_data.angular_velocity+angular_acceleration*delta_time;
-    const float3 acceleration=sum_force/particle_mass/(last_particle_index-first_particle_index+1);
+    const float3 acceleration=sum_force/granule_data.particle_mass/(last_particle_index-first_particle_index+1);
     const float3 velocity=granule_data.velocity+acceleration*delta_time;
     const float3 position=granule_data.position+velocity*delta_time;
     const float4 quaternion=normalize(granule_data.quaternion+quaternionMul(float4(0,angular_velocity),granule_data.quaternion)*delta_time*0.5);
@@ -247,7 +248,7 @@ void UpdateGranule(uint granuleIndex)
     granule_data_new.particle_index_end=granule_data.particle_index_end;
     granule_data_new.initial_inertia_tensor_index=granule_data.initial_inertia_tensor_index;
     granule_data_new.particle_radius=granule_data.particle_radius;
-    
+    granule_data_new.particle_mass=granule_data.particle_mass;
     set_next_state_granule_data(granuleIndex,granule_data_new);
     
 }
@@ -264,9 +265,10 @@ void UpdateParticle(uint particleIndex,granule_data_type granule_data)
 
 float3 get_particle_force(uint particle_index)
 {
-    float3 res=particle_mass*g;
     uint i;
     const granule_data_type granule_data=get_now_granule_data(get_granule_index_of_particle(particle_index));
+    float3 res=granule_data.particle_mass*g;
+
     for(i=0;i<current_particle_count;i++)
     {
         res+=calculate_contact_force_between_two_particle(particle_index,i,granule_data.particle_radius,get_now_granule_data(i).particle_radius);

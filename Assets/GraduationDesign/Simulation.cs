@@ -65,9 +65,10 @@ namespace GraduationDesign
             public uint ParticleIndexEnd;
             public uint InitialInertiaTensorIndex;
             public float ParticleRadius;
+            public float ParticleMass;
             public static int GetSize()
             {
-                return sizeof(float) * 3 * 3 + sizeof(float) * 4 + sizeof(uint) * 3 + sizeof(float);
+                return sizeof(float) * 3 * 3 + sizeof(float) * 4 + sizeof(uint) * 3 + sizeof(float)+sizeof(float);
             }
         }
         
@@ -176,6 +177,7 @@ namespace GraduationDesign
                 granuleData[i].ParticleIndexEnd = (uint)((i * 4 + 3)%MaxSandParticleCount);
                 granuleData[i].InitialInertiaTensorIndex = 0;           //因为沙粒的模型都是一样的。所以这里直接设置为0
                 granuleData[i].ParticleRadius = particleRadius;
+                granuleData[i].ParticleMass=particleMass;
                 for(int j=0;j<4;j++)
                 {
                     uint index = (uint)(i * 4 + j);
@@ -206,6 +208,7 @@ namespace GraduationDesign
                 data.ParticleIndexEnd = (uint)(preParticleCount+RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset.Count-1);
                 data.InitialInertiaTensorIndex = (uint)(inertia_tensor_list.Count);
                 data.ParticleRadius=RigidBodyRegister.RigidBodyData[i].ParticleRadius;
+                data.ParticleMass=RigidBodyRegister.RigidBodyData[i].ParticleMass;
                 inertia_tensor_list.Add(CalculateRefererenceInertiaTensor(RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset).inverse);
                 granuleData[preGranuleCount + i] = data;
                 for (int j = 0; j < RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset.Count; j++)

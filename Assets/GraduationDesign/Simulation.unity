@@ -586,7 +586,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 27d838a4694cb5a4183f7485a7b8dfe6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxSandSandCount: 0
+  maxSandSandCount: 2048
   particleRadius: 0.1
   particleMass: 1
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
@@ -783,7 +783,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   bodyType: 0
   particle_radius: 0.05
-  mass: 5000
+  mass: 0.1
 --- !u!4 &559899325
 Transform:
   m_ObjectHideFlags: 0

@@ -30,6 +30,7 @@ namespace GraduationDesign
             public List<Vector3> RigidBodiesParticleInitialOffset;
             public BodyType RigidBodyType;
             public float ParticleRadius;
+            public float ParticleMass;
         }
         public enum BodyType
         {
@@ -85,6 +86,7 @@ namespace GraduationDesign
             data.RigidBodiesParticleInitialOffset = rigidBodiesParticeInitialOffset;
             data.RigidBodyType = BodyType.Cube;
             data.ParticleRadius = particle_radius;
+            data.ParticleMass = mass;
             Debug.LogFormat("Cube Particle Count: {0}", rigidBodiesParticeInitialOffset.Count);
             return data;
         }
