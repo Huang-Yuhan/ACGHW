@@ -25,6 +25,7 @@ Shader "Custom/ParticleInstanceShader"
 
             StructuredBuffer<float3> _PositionBuffer;
             float _ParticleRadius;
+            float4x4 _ObjectToWorld;
             
             v2f vert(appdata_base v, uint svInstanceID : SV_InstanceID)
             {
@@ -33,6 +34,8 @@ Shader "Custom/ParticleInstanceShader"
                 uint cmdID = GetCommandID(0);
                 uint instanceID = GetIndirectInstanceID(svInstanceID);
                 float3 center = _PositionBuffer[instanceID];
+                //将center从局部坐标转换到世界坐标
+                center= mul(_ObjectToWorld,float4(center,1)).xyz;
                 float4 wpos = float4(v.vertex.xyz*_ParticleRadius*2 + center, 1);
                 o.pos = UnityObjectToClipPos(wpos);
                 o.color = float4(1, 1, 1, 1);
