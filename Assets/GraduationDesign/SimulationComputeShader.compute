@@ -1,5 +1,8 @@
 //--------------内核定义----------------//
 #pragma kernel CSMain
+#pragma kernel ForceCalculation
+#define DEBUG
+
 
 //--------------基础数据结构定义----------------//
 struct granule_data_type
@@ -11,6 +14,7 @@ struct granule_data_type
     uint particle_index_begin;
     uint particle_index_end;
     uint initial_inertia_tensor_index;
+    float particle_radius;
 };
 
 struct plane_data_type
@@ -31,6 +35,8 @@ RWStructuredBuffer<plane_data_type> plane_data_rw_structured_buffer;            
 RWStructuredBuffer<float4x4> inertia_tensor_rw_structured_buffer;                                   //转动惯量
 RWStructuredBuffer<uint> particle_index_to_granule_index_rw_structured_buffer;                      //粒子索引到Granule索引的映射
 RWStructuredBuffer<float3> particle_initial_offset_rw_structured_buffer;                            //粒子初始位置偏移
+RWStructuredBuffer<float3> particle_contact_force_rw_structured_buffer;                             //粒子接触力,这里是为了加速计算
+
 #ifdef DEBUG
 AppendStructuredBuffer<float3> debug_append_structured_buffer;                                      //for debug
 #endif
@@ -203,12 +209,17 @@ void UpdateGranule(uint granuleIndex)
     const granule_data_type granule_data= get_now_granule_data(granuleIndex);
     const uint first_particle_index=granule_data.particle_index_begin;
     const uint last_particle_index=granule_data.particle_index_end;
+    
+    
     float3 sum_force=float3(0,0,0);
     float3 sum_torque=float3(0,0,0);
     float3 particle_force=float3(0,0,0);
     for (uint i=first_particle_index;i<=last_particle_index;i++)
     {
-        particle_force=get_particle_force(i);
+        particle_force=particle_contact_force_rw_structured_buffer[i];
+        #ifdef DEBUG
+        debug_append_structured_buffer.Append(particle_force);
+        #endif
         sum_force+=particle_force;
         sum_torque+=cross(get_now_particle_position(i)-granule_data.position,particle_force);
     }
@@ -233,6 +244,7 @@ void UpdateGranule(uint granuleIndex)
     granule_data_new.particle_index_begin=granule_data.particle_index_begin;
     granule_data_new.particle_index_end=granule_data.particle_index_end;
     granule_data_new.initial_inertia_tensor_index=granule_data.initial_inertia_tensor_index;
+    granule_data_new.particle_radius=granule_data.particle_radius;
     
     set_next_state_granule_data(granuleIndex,granule_data_new);
     
@@ -256,13 +268,14 @@ float3 get_particle_force(uint particle_index)
 {
     float3 res=particle_mass*g;
     uint i;
+    const granule_data_type granule_data=get_now_granule_data(get_granule_index_of_particle(particle_index));
     for(i=0;i<current_particle_count;i++)
     {
-        res+=calculate_contact_force_between_two_particle(particle_index,i,particle_radius,particle_radius);
+        res+=calculate_contact_force_between_two_particle(particle_index,i,granule_data.particle_radius,get_now_granule_data(i).particle_radius);
     }
     for(i=0;i<plane_count;i++)
     {
-        res+=calculate_contact_force_with_plane(particle_index,particle_radius,i);
+        res+=calculate_contact_force_with_plane(particle_index,granule_data.particle_radius,i);
     }
     return res;
 }
@@ -299,11 +312,6 @@ float3 calculate_contact_force_with_plane(const uint particle_index, const float
                  
                 float3 force=calculate_contact_force_between_two_particle(particle_position,pos_in_world,particle_velocity,float3(0,0,0),R,plane_data.particle_radius);
                 res+=force;
-                #ifdef DEBUG
-                debug_append_structured_buffer.Append(pos_in_world);
-                debug_append_structured_buffer.Append(particle_position);
-                debug_append_structured_buffer.Append(force);
-                #endif
             }
         }
     
@@ -351,3 +359,15 @@ float3 calculate_contact_force_between_two_particle(const float3 particle_positi
 //链表改为排序
 //float直接转int比大小
 
+[numthreads(32,1,1)]
+void ForceCalculation(uint3 particleIndex : SV_DispatchThreadID)
+{
+    const uint index=particleIndex.x;
+    if (index>=current_particle_count)
+    {
+        return;
+    }
+    const float3 force=get_particle_force(index);
+    particle_contact_force_rw_structured_buffer[index]=force;
+
+}

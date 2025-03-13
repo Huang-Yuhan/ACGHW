@@ -43,4 +43,10 @@ public class ParticleSurfaceRender : MonoBehaviour
     {
         RenderParticle();
     }
+    
+    private void OnDestroy()
+    {
+        particelPositionBuffer.Release();
+        commandBuf.Release();
+    }
 }

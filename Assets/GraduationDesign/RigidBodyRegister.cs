@@ -8,6 +8,19 @@ namespace GraduationDesign
     public class RigidBodyRegister : MonoBehaviour
     {
         public static List<RegisterDataType> RigidBodyData = new List<RegisterDataType>();
+
+        public static int ParticleSum
+        {
+            get
+            {
+                int sum = 0;
+                for(int i=0;i<RigidBodyData.Count;i++)
+                {
+                    sum += RigidBodyData[i].RigidBodiesParticleInitialOffset.Count;
+                }
+                return sum;
+            }
+        }
         public struct RegisterDataType
         {
             public Vector3 Position;
@@ -16,6 +29,7 @@ namespace GraduationDesign
             public Quaternion Rotation;
             public List<Vector3> RigidBodiesParticleInitialOffset;
             public BodyType RigidBodyType;
+            public float ParticleRadius;
         }
         public enum BodyType
         {
@@ -68,6 +82,8 @@ namespace GraduationDesign
             data.Rotation = transform.rotation;
             data.RigidBodiesParticleInitialOffset = rigidBodiesParticeInitialOffset;
             data.RigidBodyType = BodyType.Cube;
+            data.ParticleRadius = particle_radius;
+            Debug.LogFormat("Cube Particle Count: {0}", rigidBodiesParticeInitialOffset.Count);
             return data;
         }
 
