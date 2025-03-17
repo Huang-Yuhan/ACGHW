@@ -85,6 +85,8 @@ namespace GraduationDesign
         private RenderParams _renderParams;
         private GraphicsBuffer _commandBuffer;
         private GraphicsBuffer.IndirectDrawIndexedArgs[] _commandData;
+        //-----------------GPU邻域搜索加速-----------//
+        private Vector3Int _gridResolution;
         
         //-----------------Kernels-----------------//
         Dictionary<string,int> _kernels = new Dictionary<string, int>();
@@ -482,7 +484,16 @@ namespace GraduationDesign
 
         private void SetupGrid()
         {
-            
+            //这里限定我们在[-10,10]*[0,5]*[-10,10]的区域内进行网格的切分
+            Vector3 start = new Vector3(-10, 0, -10);
+            Vector3 end = new Vector3(10, 0, 10);
+            _gridResolution = new Vector3Int(Mathf.CeilToInt((end.x - start.x) / gridCellSize.x),
+                Mathf.CeilToInt((end.y - start.y) / gridCellSize.y),
+                Mathf.CeilToInt((end.z - start.z) / gridCellSize.z));
+            Debug.LogFormat("grid resolution: {0},一共有{1}个Cell", _gridResolution,
+                _gridResolution.x * _gridResolution.y * _gridResolution.z);
+
+
         }
     }
 
