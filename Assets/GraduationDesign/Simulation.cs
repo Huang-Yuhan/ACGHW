@@ -1,5 +1,5 @@
 #define DEBUG_APPEND
-#undef DEBUG_APPEND 
+//#undef DEBUG_APPEND 
 
 using System;
 using System.Collections;
@@ -14,11 +14,11 @@ namespace GraduationDesign
 {
     public class Simulation : MonoBehaviour
     {
-        [FormerlySerializedAs("maxSandCount")] [Header("沙粒属性")]
-        public int maxSandSandCount;
-        public int MaxSandGranuleCount => maxSandSandCount;
+        [Header("沙粒属性")]
+        public int maxSandCount;
+        public int MaxSandGranuleCount => maxSandCount;
         public int MaxGranuleCount=>MaxSandGranuleCount+RigidBodyRegister.RigidBodyData.Count;
-        public int MaxSandParticleCount => maxSandSandCount * 4;
+        public int MaxSandParticleCount => maxSandCount * 4;
         public int MaxParticleCount => MaxSandParticleCount + RigidBodyRegister.ParticleSum;
         public float particleRadius;
         public float particleMass;
@@ -39,6 +39,9 @@ namespace GraduationDesign
     
         [Header("基础设置")] 
         public float deltaTime;
+
+        [Header("邻域搜索加速")] 
+        public Vector3 gridCellSize;
     
         
         //---------------一些提前设置---------------//
@@ -107,7 +110,9 @@ namespace GraduationDesign
             #if DEBUG_APPEND
             ComputeBuffer _debug_append_structured_buffer = new ComputeBuffer(65536,sizeof(float)*3,ComputeBufferType.Append);
             ComputeBuffer debug_append_count_buffer = new ComputeBuffer(1,sizeof(int),ComputeBufferType.Raw);
-
+            cs.EnableKeyword("DEBUG");  
+            #else
+            cs.DisableKeyword("DEBUG");
             #endif
             //---------------Add Compute Buffer---------------//
             AddComputeBuffer("particle_position_rw_structured_buffer",_particlePositionBuffer);
@@ -190,7 +195,7 @@ namespace GraduationDesign
                 }
             }
 
-            _currentSandCount = maxSandSandCount;
+            _currentSandCount = maxSandCount;
             _bufferIndexBegin = 0;
             
             int preGranuleCount = MaxSandGranuleCount;
@@ -473,6 +478,11 @@ namespace GraduationDesign
         private void FixedUpdate()
         {
             ProcessSimulation();
+        }
+
+        private void SetupGrid()
+        {
+            
         }
     }
 

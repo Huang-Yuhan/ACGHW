@@ -586,8 +586,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 27d838a4694cb5a4183f7485a7b8dfe6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxSandSandCount: 2048
-  particleRadius: 0.1
+  maxSandCount: 2048
+  particleRadius: 0.07
   particleMass: 1
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
   cs: {fileID: 7200000, guid: 6131c2b9e45082945adb843b11d37add, type: 3}
@@ -598,6 +598,7 @@ MonoBehaviour:
   tangentialStiffnessCoefficient: 100
   material: {fileID: 2100000, guid: 1efb0a9e5bd905949ab352e2fa33a023, type: 2}
   deltaTime: 0.01
+  gridCellSize: {x: 0, y: 0, z: 0}
   inertia_tensor_list: []
 --- !u!4 &190869049
 Transform:
@@ -768,7 +769,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &559899322
 MonoBehaviour:
   m_ObjectHideFlags: 0

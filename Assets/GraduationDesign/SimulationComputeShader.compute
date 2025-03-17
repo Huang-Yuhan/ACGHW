@@ -2,8 +2,7 @@
 #pragma kernel ForceCalculationKernel
 #pragma kernel UpdateGranuleKernel
 #pragma kernel UpdateParticleKernel
-#define DEBUG
-#undef DEBUG
+#pragma shader_feature DEBUG
 
 
 //--------------基础数据结构定义----------------//
