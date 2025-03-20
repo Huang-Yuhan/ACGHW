@@ -586,19 +586,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 27d838a4694cb5a4183f7485a7b8dfe6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxSandCount: 2048
+  maxSandCount: 32
   particleRadius: 0.07
   particleMass: 1
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
   cs: {fileID: 7200000, guid: 6131c2b9e45082945adb843b11d37add, type: 3}
   isDynamicAdding: 0
-  viscousDampingCoefficient: 50
+  viscousDampingCoefficient: 35
   elasticRestorationCoefficient: 10000
   frictionCoefficient: 0.5
   tangentialStiffnessCoefficient: 100
   material: {fileID: 2100000, guid: 1efb0a9e5bd905949ab352e2fa33a023, type: 2}
   deltaTime: 0.01
-  gridCellSize: {x: 0, y: 0, z: 0}
+  gridCellSize: {x: 0.5, y: 0.5, z: 0.5}
+  gridOrigin: {x: -10, y: 0, z: -10}
+  gridLength: {x: 20, y: 5, z: 20}
+  sortingShader: {fileID: 7200000, guid: dd9e6c4b54e463c409512ef8efb72fbd, type: 3}
   inertia_tensor_list: []
 --- !u!4 &190869049
 Transform:

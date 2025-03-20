@@ -163,11 +163,11 @@ MonoBehaviour:
   m_GameObject: {fileID: 348716696}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: dd97060f5fb71094daa06937fdefd06f, type: 3}
+  m_Script: {fileID: 11500000, guid: a32bb43df9378c34ebc6438d40b38555, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_util: {fileID: 7200000, guid: fd7b3baea73959841af34bb46caec73e, type: 3}
-  forwardSweep: {fileID: 7200000, guid: d1ef25974e098454e9437f940eed5cb0, type: 3}
+  sortShader: {fileID: 7200000, guid: dd9e6c4b54e463c409512ef8efb72fbd, type: 3}
+  numElements: 16
 --- !u!1 &399791227
 GameObject:
   m_ObjectHideFlags: 0

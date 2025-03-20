@@ -1,5 +1,5 @@
 #define DEBUG_APPEND
-//#undef DEBUG_APPEND 
+#undef DEBUG_APPEND 
 
 using System;
 using System.Collections;
@@ -8,6 +8,8 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.Serialization;
 using Random = UnityEngine.Random;
+using GPUSorting;
+using GPUSorting.Runtime;
 
 
 namespace GraduationDesign
@@ -42,6 +44,15 @@ namespace GraduationDesign
 
         [Header("邻域搜索加速")] 
         public Vector3 gridCellSize;
+
+        public Vector3 gridOrigin;
+        public Vector3 gridLength;
+        public ComputeShader sortingShader;
+        private GPUSorting.Runtime.DeviceRadixSort sorter;
+        private ComputeBuffer temp0Buffer;
+        private ComputeBuffer temp1Buffer;
+        private ComputeBuffer temp2Buffer;
+        private ComputeBuffer temp3Buffer;
     
         
         //---------------一些提前设置---------------//
@@ -86,7 +97,15 @@ namespace GraduationDesign
         private GraphicsBuffer _commandBuffer;
         private GraphicsBuffer.IndirectDrawIndexedArgs[] _commandData;
         //-----------------GPU邻域搜索加速-----------//
-        private Vector3Int _gridResolution;
+        private Vector3Int _gridResolution
+        {
+            get
+            {
+                return new Vector3Int((int)(gridLength.x/gridCellSize.x),
+                    (int)(gridLength.y/gridCellSize.y),
+                    (int)(gridLength.z/gridCellSize.z));
+            }
+        }
         
         //-----------------Kernels-----------------//
         Dictionary<string,int> _kernels = new Dictionary<string, int>();
@@ -99,6 +118,7 @@ namespace GraduationDesign
 
         void InitSimulation()
         {
+            SetupGrid();
             //---------------初始化Compute Buffer---------------//
             ComputeBuffer _particlePositionBuffer = new ComputeBuffer(MaxParticleCount*2,sizeof(float)*3);        //粒子位置，*2是类似于OpenGL中Transform Feedback的双缓冲
             ComputeBuffer _particleVelocityBuffer = new ComputeBuffer(MaxParticleCount*2,sizeof(float)*3);        //粒子速度
@@ -108,6 +128,9 @@ namespace GraduationDesign
             ComputeBuffer _particle_index_to_granule_index_rw_structured_buffer=new ComputeBuffer(MaxParticleCount,sizeof(uint));
             ComputeBuffer _particle_initial_offset_rw_structured_buffer=new ComputeBuffer(MaxParticleCount,sizeof(float)*3);
             ComputeBuffer _particle_contact_force_rw_structured_buffer=new ComputeBuffer(MaxParticleCount,sizeof(float) * 3);
+            ComputeBuffer _particle_in_grid_index_rw_structured_buffer=new ComputeBuffer(MaxParticleCount,sizeof(uint));
+            ComputeBuffer _particle_in_grid_particle_index_rw_structured_buffer=new ComputeBuffer(MaxParticleCount,sizeof(uint));
+            
             
             #if DEBUG_APPEND
             ComputeBuffer _debug_append_structured_buffer = new ComputeBuffer(65536,sizeof(float)*3,ComputeBufferType.Append);
@@ -125,6 +148,12 @@ namespace GraduationDesign
             AddComputeBuffer("particle_index_to_granule_index_rw_structured_buffer",_particle_index_to_granule_index_rw_structured_buffer);
             AddComputeBuffer("particle_initial_offset_rw_structured_buffer",_particle_initial_offset_rw_structured_buffer);
             AddComputeBuffer("particle_contact_force_rw_structured_buffer",_particle_contact_force_rw_structured_buffer);
+            AddComputeBuffer("particle_in_grid_index_rw_structured_buffer",_particle_in_grid_index_rw_structured_buffer);
+            AddComputeBuffer("particle_in_grid_particle_index_rw_structured_buffer",_particle_in_grid_particle_index_rw_structured_buffer);
+            AddComputeBuffer("temp0Buffer",temp0Buffer);
+            AddComputeBuffer("temp1Buffer",temp1Buffer);
+            AddComputeBuffer("temp2Buffer",temp2Buffer);
+            AddComputeBuffer("temp3Buffer",temp3Buffer);
             #if DEBUG_APPEND
             AddComputeBuffer("debug_append_structured_buffer",_debug_append_structured_buffer);
             AddComputeBuffer("debug_append_count_buffer",debug_append_count_buffer);
@@ -135,6 +164,8 @@ namespace GraduationDesign
             AddKernel("UpdateGranuleKernel");
             AddKernel("ForceCalculationKernel");
             AddKernel("UpdateParticleKernel");
+
+
         }
 
         private void InitRender()
@@ -174,6 +205,8 @@ namespace GraduationDesign
             Vector3[] particleVelocity = new Vector3[_buffers["particle_velocity_rw_structured_buffer"].count];
             uint[] particleIndexToGranuleIndex = new uint[_buffers["particle_index_to_granule_index_rw_structured_buffer"].count];
             Vector3[] particleInitialOffset = new Vector3[_buffers["particle_initial_offset_rw_structured_buffer"].count];
+            uint[] particleGridIndex = new uint[_buffers["particle_in_grid_index_rw_structured_buffer"].count];
+            uint[] particleGridParticleIndex = new uint[_buffers["particle_in_grid_particle_index_rw_structured_buffer"].count];
             for (int i = 0; i < MaxSandGranuleCount; i++)
             {
                 granuleData[i].Position = new Vector3(Random.Range(-9f, 9f), Random.Range(1f,5f), Random.Range(-9f, 9f));
@@ -194,6 +227,11 @@ namespace GraduationDesign
                         particleIndexToGranuleIndex[index] = (uint)i;
                     if(index<particleInitialOffset.Length)
                         particleInitialOffset[index] = _tetrahedronVertices[j] * particleRadius;
+                    Vector3Int grid_index = new Vector3Int((int)((particlePosition[index].x+10)/gridCellSize.x),
+                        (int)((particlePosition[index].y)/gridCellSize.y),
+                        (int)((particlePosition[index].z+10)/gridCellSize.z));
+                    particleGridIndex[index] = (uint)(grid_index.x+_gridResolution.x*grid_index.y+_gridResolution.x*_gridResolution.y*grid_index.z);
+                    particleGridParticleIndex[index] = index;
                 }
             }
 
@@ -227,6 +265,10 @@ namespace GraduationDesign
                         particleIndexToGranuleIndex[index] = (uint)(preGranuleCount+i);
                     if(index<particleInitialOffset.Length)
                         particleInitialOffset[index] = RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset[j];
+                    
+                    Vector3Int grid_index = new Vector3Int((int)((particlePosition[index].x-gridOrigin.x)/gridCellSize.x),(int)((particlePosition[index].y-gridOrigin.y)/gridCellSize.y),(int)((particlePosition[index].z-gridOrigin.z)/gridCellSize.z));
+                    particleGridIndex[index] = (uint)(grid_index.x+_gridResolution.x*grid_index.y+_gridResolution.x*_gridResolution.y*grid_index.z);
+                    particleGridParticleIndex[index] = index;
                 }
                 preParticleCount += RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset.Count;
                 preGranuleCount++;
@@ -240,6 +282,8 @@ namespace GraduationDesign
             _buffers["inertia_tensor_rw_structured_buffer"].SetData(inertia_tensor_list.ToArray());
             _buffers["particle_index_to_granule_index_rw_structured_buffer"].SetData(particleIndexToGranuleIndex);
             _buffers["particle_initial_offset_rw_structured_buffer"].SetData(particleInitialOffset);
+            _buffers["particle_in_grid_index_rw_structured_buffer"].SetData(particleGridIndex);
+            _buffers["particle_in_grid_particle_index_rw_structured_buffer"].SetData(particleGridParticleIndex);
             #if DEBUG_APPEND
             _buffers["debug_append_structured_buffer"].SetCounterValue(0);
             #endif
@@ -261,7 +305,8 @@ namespace GraduationDesign
             AddId("mu");
             AddId("plane_count");
             AddId("I_inverse_initial");
-
+            AddId("grid_size");
+            AddId("grid_origin");
         }
 
         private void Awake()
@@ -345,6 +390,23 @@ namespace GraduationDesign
             cs.SetFloat(shaderParameterIds["k_t"], tangentialStiffnessCoefficient);
             cs.SetFloat(shaderParameterIds["mu"], frictionCoefficient);
             cs.SetInt(shaderParameterIds["plane_count"], PlaneRegister.plane_data.Count);
+            cs.SetVector("grid_size",gridCellSize);
+            cs.SetVector("grid_origin",gridOrigin);
+            
+            //-----------------GPU Sort-----------------//
+            sorter.Sort(
+                MaxParticleCount,
+                _buffers["particle_in_grid_index_rw_structured_buffer"],
+                _buffers["particle_in_grid_particle_index_rw_structured_buffer"],
+                temp0Buffer,
+                temp1Buffer,
+                temp2Buffer,
+                temp3Buffer,
+                typeof(uint),
+                typeof(uint),
+                true
+                );
+            
             //-----------------Force Calculation-----------------//
             ComputeShaderSetBuffer("ForceCalculationKernel","particle_position_rw_structured_buffer");
             ComputeShaderSetBuffer("ForceCalculationKernel","particle_velocity_rw_structured_buffer");
@@ -383,9 +445,12 @@ namespace GraduationDesign
             ComputeShaderSetBuffer("UpdateParticleKernel","granule_data_rw_structured_buffer");
             ComputeShaderSetBuffer("UpdateParticleKernel","particle_index_to_granule_index_rw_structured_buffer");
             ComputeShaderSetBuffer("UpdateParticleKernel","particle_initial_offset_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateParticleKernel","particle_in_grid_index_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateParticleKernel","particle_in_grid_particle_index_rw_structured_buffer");
             
             cs.Dispatch(_kernels["UpdateParticleKernel"],Mathf.CeilToInt(_currentParticleCount/32f), 1, 1);
  
+
             
 #if DEBUG_APPEND
             
@@ -484,15 +549,15 @@ namespace GraduationDesign
 
         private void SetupGrid()
         {
-            //这里限定我们在[-10,10]*[0,5]*[-10,10]的区域内进行网格的切分
-            Vector3 start = new Vector3(-10, 0, -10);
-            Vector3 end = new Vector3(10, 0, 10);
-            _gridResolution = new Vector3Int(Mathf.CeilToInt((end.x - start.x) / gridCellSize.x),
-                Mathf.CeilToInt((end.y - start.y) / gridCellSize.y),
-                Mathf.CeilToInt((end.z - start.z) / gridCellSize.z));
+
             Debug.LogFormat("grid resolution: {0},一共有{1}个Cell", _gridResolution,
                 _gridResolution.x * _gridResolution.y * _gridResolution.z);
 
+
+            sorter = new DeviceRadixSort(sortingShader, MaxParticleCount, ref temp0Buffer, ref temp1Buffer,
+                ref temp2Buffer, ref temp3Buffer);
+            
+            
 
         }
     }

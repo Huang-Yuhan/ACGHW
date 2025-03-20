@@ -38,6 +38,8 @@ RWStructuredBuffer<float4x4> inertia_tensor_rw_structured_buffer;               
 RWStructuredBuffer<uint> particle_index_to_granule_index_rw_structured_buffer;                      //粒子索引到Granule索引的映射
 RWStructuredBuffer<float3> particle_initial_offset_rw_structured_buffer;                            //粒子初始位置偏移
 RWStructuredBuffer<float3> particle_contact_force_rw_structured_buffer;                             //粒子接触力,这里是为了加速计算
+RWStructuredBuffer<uint> particle_in_grid_index_rw_structured_buffer;                               //粒子所在网格索引
+RWStructuredBuffer<uint> particle_in_grid_particle_index_rw_structured_buffer;                      //粒子所在网格内的粒子索引,用于充当排序的value
 
 #ifdef DEBUG
 AppendStructuredBuffer<float3> debug_append_structured_buffer;                                      //for debug
@@ -58,6 +60,8 @@ float k_r;                                                                      
 float mu;                                                                                           //friction coefficient(摩擦系数)
 float k_t;                                                                                          //tangential stiffness coefficient(切向刚度系数)
 uint plane_count;                                                                                   //平面数量
+float3 grid_size;                                                                                   //网格大小
+float3 grid_origin;                                                                                 //网格原点
 //--------------函数定义----------------//
 float3 get_now_particle_position(uint index);
 float3 get_now_particle_velocity(uint index);
@@ -83,6 +87,8 @@ float3 calculate_contact_force_between_two_particle(const uint particle_index1,c
 float3 calculate_contact_force_between_two_particle(const float3 particle_position1,const float3 particle_position2,const float3 particle_velocity1,const float3 particle_velocity2,const float R1,const float R2); //计算两个粒子之间的接触力
 float4 quaternionMul(float4 q1,float4 q2);
 float3 calculate_contact_force_with_plane(const uint particle_index, const float R,const uint plane_index);
+uint3 get_grid_index_uint3(float3 position);
+uint get_grid_index_uint(float3 position);
 //--------------常量定义----------------//
 //取消常量定义
 static const int3 grid_offset[27] = {
@@ -190,6 +196,15 @@ float4 quaternionMul(float4 q1,float4 q2)
     
     return result;
 }
+uint3 get_grid_index_uint3(float3 position)
+{
+    return uint3((position-grid_origin)/grid_size);
+}
+uint get_grid_index(float3 position)
+{
+    uint3 grid_index=get_grid_index_uint3(position);
+    return grid_index.x+grid_index.y*grid_size.x+grid_index.z*grid_size.x*grid_size.y;
+}
 [numthreads(32,1,1)]
 void UpdateGranuleKernel (uint3 granuleIndex : SV_DispatchThreadID)
 {
@@ -257,7 +272,10 @@ void UpdateParticle(uint particleIndex,granule_data_type granule_data)
     float3x3 rotation_matrix = QuaternionToMatrix(granule_data.quaternion);
     float3 particle_position=granule_data.position+mul(rotation_matrix,get_particle_position_offset(particleIndex));
     float3 particle_velocity=granule_data.velocity+cross(granule_data.angular_velocity,get_particle_position_offset(particleIndex));
-
+    const uint grid_index=get_grid_index(particle_position);
+    particle_in_grid_index_rw_structured_buffer[particleIndex]=grid_index;
+    particle_in_grid_particle_index_rw_structured_buffer[particleIndex]=particleIndex;
+    
     set_next_state_particle_position(particleIndex,particle_position);
     set_next_state_particle_velocity(particleIndex,particle_velocity);
 }
