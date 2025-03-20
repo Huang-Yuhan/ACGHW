@@ -416,6 +416,8 @@ namespace GraduationDesign
             ComputeShaderSetBuffer("ForceCalculationKernel","particle_index_to_granule_index_rw_structured_buffer");
             ComputeShaderSetBuffer("ForceCalculationKernel","particle_initial_offset_rw_structured_buffer");
             ComputeShaderSetBuffer("ForceCalculationKernel","particle_contact_force_rw_structured_buffer");
+            ComputeShaderSetBuffer("ForceCalculationKernel","particle_in_grid_index_rw_structured_buffer");
+            ComputeShaderSetBuffer("ForceCalculationKernel","particle_in_grid_particle_index_rw_structured_buffer");
 #if DEBUG_APPEND
             ComputeShaderSetBuffer("ForceCalculationKernel","debug_append_structured_buffer");
 #endif

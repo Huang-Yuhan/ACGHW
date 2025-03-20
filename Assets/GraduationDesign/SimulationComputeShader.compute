@@ -89,6 +89,7 @@ float4 quaternionMul(float4 q1,float4 q2);
 float3 calculate_contact_force_with_plane(const uint particle_index, const float R,const uint plane_index);
 uint3 get_grid_index_uint3(float3 position);
 uint get_grid_index_uint(float3 position);
+uint2 find_element_in_particle_in_grid_index(uint grid_index);                                  //找到在buffer里面第一个粒子的索引和最后一个粒子的索引
 //--------------常量定义----------------//
 //取消常量定义
 static const int3 grid_offset[27] = {
@@ -205,6 +206,46 @@ uint get_grid_index(float3 position)
     uint3 grid_index=get_grid_index_uint3(position);
     return grid_index.x+grid_index.y*grid_size.x+grid_index.z*grid_size.x*grid_size.y;
 }
+uint2 find_element_in_particle_in_grid_index(uint grid_index)
+{
+    
+    //先二分查找找到第一个等于grid_index的元素
+    uint left=0,right=current_particle_count-1;
+    while (left<right)
+    {
+        uint mid=(left+right)/2;
+        if (particle_in_grid_index_rw_structured_buffer[mid]<grid_index)
+        {
+            left=mid+1;
+        }
+        else
+        {
+            right=mid;
+        }
+    }
+    uint first=left;
+    if (particle_in_grid_index_rw_structured_buffer[first]!=grid_index)
+    {
+        return uint2(current_particle_count,current_particle_count-1);
+    }
+    //再二分查找找到最后一个等于grid_index的元素
+    left=0;
+    right=current_particle_count-1;
+    while (left<right)
+    {
+        uint mid=(left+right+1)/2;
+        if (particle_in_grid_index_rw_structured_buffer[mid]<=grid_index)
+        {
+            left=mid;
+        }
+        else
+        {
+            right=mid-1;
+        }
+    }
+    uint last=left;
+    return uint2(first,last);
+}
 [numthreads(32,1,1)]
 void UpdateGranuleKernel (uint3 granuleIndex : SV_DispatchThreadID)
 {
@@ -286,9 +327,21 @@ float3 get_particle_force(uint particle_index)
     const granule_data_type granule_data=get_now_granule_data(get_granule_index_of_particle(particle_index));
     float3 res=granule_data.particle_mass*g;
 
-    for(i=0;i<current_particle_count;i++)
+    /*for(i=0;i<current_particle_count;i++)
     {
         res+=calculate_contact_force_between_two_particle(particle_index,i,granule_data.particle_radius,get_now_granule_data(i).particle_radius);
+    }*/
+    uint3 grid_index=get_grid_index_uint3(get_now_particle_position(particle_index));
+    for (i=0;i<27;i++)
+    {
+        uint3 neighbor_grid_index=grid_index+grid_offset[i];
+        uint neighbor_grid_index_uint=get_grid_index(neighbor_grid_index);
+        uint2 element_index=find_element_in_particle_in_grid_index(neighbor_grid_index_uint);
+        for (uint j=element_index.x;j<=element_index.y;j++)
+        {
+            uint neighbor_particle_index=particle_in_grid_particle_index_rw_structured_buffer[j];
+            res+=calculate_contact_force_between_two_particle(particle_index,neighbor_particle_index,granule_data.particle_radius,get_now_granule_data(get_granule_index_of_particle(neighbor_particle_index)).particle_radius);
+        }
     }
     for(i=0;i<plane_count;i++)
     {
