@@ -92,17 +92,6 @@ uint get_grid_index_uint(float3 position);
 uint2 find_element_in_particle_in_grid_index(uint grid_index);                                  //找到在buffer里面第一个粒子的索引和最后一个粒子的索引
 //--------------常量定义----------------//
 //取消常量定义
-static const int3 grid_offset[27] = {
-    int3(-1,-1,-1),int3(-1,-1,0),int3(-1,-1,1),
-    int3(-1,0,-1),int3(-1,0,0),int3(-1,0,1),
-    int3(-1,1,-1),int3(-1,1,0),int3(-1,1,1),
-    int3(0,-1,-1),int3(0,-1,0),int3(0,-1,1),
-    int3(0,0,-1),int3(0,0,1),int3(0,0,0),
-    int3(0,1,-1),int3(0,1,0),int3(0,1,1),
-    int3(1,-1,-1),int3(1,-1,0),int3(1,-1,1),
-    int3(1,0,-1),int3(1,0,0),int3(1,0,1),
-    int3(1,1,-1),int3(1,1,0),int3(1,1,1)
-};
 static const float3 g = float3(0,-9.8,0);
 
 
@@ -331,18 +320,24 @@ float3 get_particle_force(uint particle_index)
     {
         res+=calculate_contact_force_between_two_particle(particle_index,i,granule_data.particle_radius,get_now_granule_data(i).particle_radius);
     }*/
-    uint3 grid_index=get_grid_index_uint3(get_now_particle_position(particle_index));
-    for (i=0;i<27;i++)
-    {
-        uint3 neighbor_grid_index=grid_index+grid_offset[i];
-        uint neighbor_grid_index_uint=get_grid_index(neighbor_grid_index);
-        uint2 element_index=find_element_in_particle_in_grid_index(neighbor_grid_index_uint);
-        for (uint j=element_index.x;j<=element_index.y;j++)
-        {
-            uint neighbor_particle_index=particle_in_grid_particle_index_rw_structured_buffer[j];
-            res+=calculate_contact_force_between_two_particle(particle_index,neighbor_particle_index,granule_data.particle_radius,get_now_granule_data(get_granule_index_of_particle(neighbor_particle_index)).particle_radius);
-        }
-    }
+    const uint3 grid_index=get_grid_index_uint3(get_now_particle_position(particle_index));
+
+    [unroll]
+    for (int dx=-1;dx<=1;dx++)
+        [unroll]
+        for (int dy=-1;dy<=1;dy++)
+            [unroll]
+            for (int dz=-1;dz<=1;dz++)
+            {
+                const uint3 neighbor_grid_index=grid_index+uint3(dx,dy,dz);
+                const uint neighbor_grid_index_uint=get_grid_index(neighbor_grid_index);
+                const uint2 element_index=find_element_in_particle_in_grid_index(neighbor_grid_index_uint);
+                for (uint j=element_index.x;j<=element_index.y;j++)
+                {
+                    uint neighbor_particle_index=particle_in_grid_particle_index_rw_structured_buffer[j];
+                    res+=calculate_contact_force_between_two_particle(particle_index,neighbor_particle_index,granule_data.particle_radius,get_now_granule_data(get_granule_index_of_particle(neighbor_particle_index)).particle_radius);
+                }
+            }
     for(i=0;i<plane_count;i++)
     {
         res+=calculate_contact_force_with_plane(particle_index,granule_data.particle_radius,i);

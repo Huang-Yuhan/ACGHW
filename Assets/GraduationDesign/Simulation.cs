@@ -390,8 +390,8 @@ namespace GraduationDesign
             cs.SetFloat(shaderParameterIds["k_t"], tangentialStiffnessCoefficient);
             cs.SetFloat(shaderParameterIds["mu"], frictionCoefficient);
             cs.SetInt(shaderParameterIds["plane_count"], PlaneRegister.plane_data.Count);
-            cs.SetVector("grid_size",gridCellSize);
-            cs.SetVector("grid_origin",gridOrigin);
+            cs.SetVector(shaderParameterIds["grid_size"],gridCellSize);
+            cs.SetVector(shaderParameterIds["grid_origin"],gridOrigin);
             
             //-----------------GPU Sort-----------------//
             sorter.Sort(
