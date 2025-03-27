@@ -41,6 +41,7 @@ RWStructuredBuffer<granule_data_type> granule_data_rw_structured_buffer;        
 groupshared granule_data_type granule_data_group_shared[THREAD_GROUP_SIZE_X];
 ConsumeStructuredBuffer<granule_data_type> granule_data_consume_structured_buffer;                  //Granule数据，用于动态添加
 RWStructuredBuffer<plane_data_type> plane_data_rw_structured_buffer;                                //平面数据
+groupshared plane_data_type plane_data_group_shared[20];                                            //目前平面比较少
 RWStructuredBuffer<float4x4> inertia_tensor_rw_structured_buffer;                                   //转动惯量
 RWStructuredBuffer<uint> particle_index_to_granule_index_rw_structured_buffer;                      //粒子索引到Granule索引的映射
 RWStructuredBuffer<float3> particle_initial_offset_rw_structured_buffer;                            //粒子初始位置偏移
@@ -395,7 +396,7 @@ float3 calculate_contact_force_with_plane(const uint particle_index, const float
     float3 res=float3(0,0,0);
     const float3 particle_position=get_now_particle_position(particle_index);
     const float3 particle_velocity=get_now_particle_velocity(particle_index);
-    const plane_data_type plane_data=plane_data_rw_structured_buffer[plane_index];
+    const plane_data_type plane_data=plane_data_group_shared[plane_index];
 
     const float3 particle_position_offset=particle_position-plane_data.origin;
     const float3 a_axis=normalize(plane_data.a_axis);
@@ -474,6 +475,10 @@ void ForceCalculationKernel(uint3 particleIndex : SV_DispatchThreadID,uint group
     }
     particle_position_group_shared[groupThreadID.x]=get_now_particle_position(index);
     particle_velocity_group_shared[groupThreadID.x]=get_now_particle_velocity(index);
+    if (groupThreadID.x<plane_count)
+    {
+        plane_data_group_shared[groupThreadID.x]=plane_data_rw_structured_buffer[groupThreadID.x];
+    }
     GroupMemoryBarrierWithGroupSync();
     const float3 force=get_particle_force(index);
     particle_contact_force_rw_structured_buffer[index]=force;
