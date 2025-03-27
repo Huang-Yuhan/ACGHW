@@ -8,12 +8,14 @@ Shader "Custom/ParticleInstanceShader"
             
             
             CGPROGRAM
+            #pragma enable_d3d11_debug_symbols
             #pragma vertex vert
             #pragma fragment frag
 
             #include "UnityCG.cginc"
             #define UNITY_INDIRECT_DRAW_ARGS IndirectDrawIndexedArgs
             #include "UnityIndirect.cginc"
+            
 
             struct v2f
             {

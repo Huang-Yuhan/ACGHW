@@ -1,6 +1,5 @@
 #define DEBUG_APPEND
 #undef DEBUG_APPEND 
-
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -92,6 +91,7 @@ namespace GraduationDesign
         private int _currentParticleCount=>_currentSandCount*4+RigidBodyRegister.ParticleSum; //当前一共的粒子数量
         private int _bufferIndexBegin;
         public List<Matrix4x4> inertia_tensor_list;
+        const float THREAD_GROUP_SIZE_X = 64;
         //-----------------沙粒渲染-----------------//
         private RenderParams _renderParams;
         private GraphicsBuffer _commandBuffer;
@@ -307,6 +307,27 @@ namespace GraduationDesign
             AddId("I_inverse_initial");
             AddId("grid_size");
             AddId("grid_origin");
+            AddId("buffer_index_begin_multiple_max_granule_count");
+
+            uint param_size = 0;
+            param_size += sizeof(float)*3; //delta_time
+            param_size += sizeof(int); //current_granule_count
+            param_size += sizeof(int); //max_granule_count
+            param_size += sizeof(int); //current_particle_count
+            param_size += sizeof(int); //max_particle_count
+            param_size += sizeof(float); //particle_mass
+            param_size += sizeof(float); //particle_radius
+            param_size += sizeof(int); //consume_granule_count
+            param_size += sizeof(int); //buffer_index_begin
+            param_size += sizeof(float); //k_d
+            param_size += sizeof(float); //k_r
+            param_size += sizeof(float); //k_t
+            param_size += sizeof(float); //mu
+            param_size += sizeof(int); //plane_count
+            param_size += sizeof(float)*4*4; //I_inverse_initial
+            param_size += sizeof(float)*3; //grid_size
+            param_size += sizeof(float)*3; //grid_origin
+            
         }
 
         private void Awake()
@@ -390,8 +411,10 @@ namespace GraduationDesign
             cs.SetFloat(shaderParameterIds["k_t"], tangentialStiffnessCoefficient);
             cs.SetFloat(shaderParameterIds["mu"], frictionCoefficient);
             cs.SetInt(shaderParameterIds["plane_count"], PlaneRegister.plane_data.Count);
-            cs.SetVector("grid_size",gridCellSize);
-            cs.SetVector("grid_origin",gridOrigin);
+            cs.SetVector(shaderParameterIds["grid_size"], gridCellSize);
+            cs.SetVector(shaderParameterIds["grid_origin"], gridOrigin);
+            cs.SetInt(shaderParameterIds["buffer_index_begin_multiple_max_granule_count"],_bufferIndexBegin*MaxGranuleCount);
+            
             
             //-----------------GPU Sort-----------------//
             sorter.Sort(
@@ -422,7 +445,7 @@ namespace GraduationDesign
             ComputeShaderSetBuffer("ForceCalculationKernel","debug_append_structured_buffer");
 #endif
     
-            cs.Dispatch(_kernels["ForceCalculationKernel"],Mathf.CeilToInt(_currentParticleCount/32f), 1, 1);
+            cs.Dispatch(_kernels["ForceCalculationKernel"],Mathf.CeilToInt(_currentParticleCount/THREAD_GROUP_SIZE_X), 1, 1);
             
             //-----------------UpdateGranuleKernel-----------------//
             
@@ -439,7 +462,7 @@ namespace GraduationDesign
 #endif
             
             
-            cs.Dispatch(_kernels["UpdateGranuleKernel"],Mathf.CeilToInt(_currentGranuleCount/32f), 1, 1);
+            cs.Dispatch(_kernels["UpdateGranuleKernel"],Mathf.CeilToInt(_currentGranuleCount/THREAD_GROUP_SIZE_X), 1, 1);
             
             //-----------------UpdateParticleKernel-----------------//
             ComputeShaderSetBuffer("UpdateParticleKernel","particle_position_rw_structured_buffer");
@@ -450,7 +473,7 @@ namespace GraduationDesign
             ComputeShaderSetBuffer("UpdateParticleKernel","particle_in_grid_index_rw_structured_buffer");
             ComputeShaderSetBuffer("UpdateParticleKernel","particle_in_grid_particle_index_rw_structured_buffer");
             
-            cs.Dispatch(_kernels["UpdateParticleKernel"],Mathf.CeilToInt(_currentParticleCount/32f), 1, 1);
+            cs.Dispatch(_kernels["UpdateParticleKernel"],Mathf.CeilToInt(_currentParticleCount/THREAD_GROUP_SIZE_X), 1, 1);
  
 
             

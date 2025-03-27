@@ -1,9 +1,13 @@
+#pragma use_dxc
+#pragma enable_d3d11_debug_symbols
+
 //--------------内核定义----------------//
 #pragma kernel ForceCalculationKernel
 #pragma kernel UpdateGranuleKernel
 #pragma kernel UpdateParticleKernel
 #pragma shader_feature DEBUG
 
+#define THREAD_GROUP_SIZE_X 64
 
 //--------------基础数据结构定义----------------//
 struct granule_data_type
@@ -30,8 +34,11 @@ struct plane_data_type
 
 //--------------Compute Buffer定义----------------//
 RWStructuredBuffer<float3> particle_position_rw_structured_buffer;                                  //粒子位置
+groupshared float3 particle_position_group_shared[THREAD_GROUP_SIZE_X];
 RWStructuredBuffer<float3> particle_velocity_rw_structured_buffer;                                  //粒子速度
+groupshared float3 particle_velocity_group_shared[THREAD_GROUP_SIZE_X];
 RWStructuredBuffer<granule_data_type> granule_data_rw_structured_buffer;                            //Granule数据
+groupshared granule_data_type granule_data_group_shared[THREAD_GROUP_SIZE_X];
 ConsumeStructuredBuffer<granule_data_type> granule_data_consume_structured_buffer;                  //Granule数据，用于动态添加
 RWStructuredBuffer<plane_data_type> plane_data_rw_structured_buffer;                                //平面数据
 RWStructuredBuffer<float4x4> inertia_tensor_rw_structured_buffer;                                   //转动惯量
@@ -46,22 +53,31 @@ AppendStructuredBuffer<float3> debug_append_structured_buffer;                  
 #endif
 
 //--------------变量定义----------------//
-float delta_time;                                                                                   //时间步长
-uint current_granule_count;                                                                          //当前Granule数量
-uint max_granule_count;                                                                              //最大Granule数量
-uint current_particle_count;                                                                         //当前粒子数量
-uint max_particle_count;                                                                             //最大粒子数量
-float particle_mass;                                                                                //粒子质量
-float particle_radius;                                                                              //粒子半径
-uint consume_granule_count;                                                                          //消耗Granule数量
-uint buffer_index_begin;                                                                             //缓冲区索引开始,这里主要用于处理双缓冲,值为0或1
-float k_d;                                                                                        //viscous damping coefficient(粘性阻尼系数)                                                    
-float k_r;                                                                                          //elastic restoration coefficient(弹性恢复系数)
-float mu;                                                                                           //friction coefficient(摩擦系数)
-float k_t;                                                                                          //tangential stiffness coefficient(切向刚度系数)
-uint plane_count;                                                                                   //平面数量
-float3 grid_size;                                                                                   //网格大小
-float3 grid_origin;                                                                                 //网格原点
+cbuffer STATIC_VAR:register(b0)
+{
+    float delta_time;                                                                                   //时间步长
+    uint current_granule_count;                                                                          //当前Granule数量
+    uint max_granule_count;                                                                              //最大Granule数量
+    uint max_particle_count;                                                                             //最大粒子数量
+    float particle_mass;                                                                                //粒子质量
+    float particle_radius;                                                                              //粒子半径
+    float k_d;                                                                                        //viscous damping coefficient(粘性阻尼系数)                                                    
+    float k_r;                                                                                          //elastic restoration coefficient(弹性恢复系数)
+    float mu;                                                                                           //friction coefficient(摩擦系数)
+    float k_t;                                                                                          //tangential stiffness coefficient(切向刚度系数)
+    uint plane_count;                                                                                   //平面数量
+    float3 grid_size;                                                                                   //网格大小
+    float3 grid_origin;                                                                                 //网格原点
+}
+
+cbuffer DYNAMIC_VAR:register(b1)
+{
+    uint current_particle_count;                                                                         //当前粒子数量
+    uint consume_granule_count;                                                                          //消耗Granule数量
+    uint buffer_index_begin;                                                                             //缓冲区索引开始,这里主要用于处理双缓冲,值为0或1
+    uint buffer_index_begin_multiple_max_granule_count;
+}
+
 //--------------函数定义----------------//
 float3 get_now_particle_position(uint index);
 float3 get_now_particle_velocity(uint index);
@@ -79,9 +95,9 @@ uint get_next_state_granule_index(uint granule_index);
 uint get_granule_index_of_particle(uint particle_index);
 float3 get_particle_position_offset(uint particle_index);                                           //获取粒子位置偏移(相对于Granule)
 float3x3 QuaternionToMatrix(float4 quaternion);                                                      //四元数转矩阵
-void Simulation(uint3 granuleIndex : SV_DispatchThreadID);
+void Simulation(uint3 granuleIndex : SV_DispatchThreadID,uint3 groupIndex : SV_GroupThreadID);       //模拟
 void UpdateParticle(uint particleIndex,granule_data_type granule_data);
-void UpdateGranule(uint granuleIndex);
+void UpdateGranule(uint granuleIndex, uint3 groupIndex);
 float3 get_particle_force(uint particle_index);                                                           //particle所受力
 float3 calculate_contact_force_between_two_particle(const uint particle_index1,const uint particle_index2,const float R1,const float R2); //计算两个粒子之间的接触力
 float3 calculate_contact_force_between_two_particle(const float3 particle_position1,const float3 particle_position2,const float3 particle_velocity1,const float3 particle_velocity2,const float R1,const float R2); //计算两个粒子之间的接触力
@@ -112,14 +128,17 @@ float3 get_now_particle_position(uint index)
 {
     return particle_position_rw_structured_buffer[get_now_particle_index(index)];
 }
+
 float3 get_now_particle_velocity(uint index)
 {
     return particle_velocity_rw_structured_buffer[get_now_particle_index(index)];
 }
+
 granule_data_type get_now_granule_data(uint index)
 {
     return granule_data_rw_structured_buffer[get_now_granule_index(index)];
 }
+
 void set_now_particle_position(uint index, float3 position)
 {
     particle_position_rw_structured_buffer[get_now_particle_index(index)]=position;
@@ -150,7 +169,7 @@ uint get_now_particle_index(uint particle_index)
 }
 uint get_now_granule_index(uint granule_index)
 {
-    return granule_index+buffer_index_begin*max_granule_count;
+    return granule_index+buffer_index_begin_multiple_max_granule_count;
 }
 uint get_next_state_particle_index(uint particle_index)
 {
@@ -162,7 +181,7 @@ uint get_next_state_granule_index(uint granule_index)
 }
 uint get_granule_index_of_particle(uint particle_index)
 {
-    return particle_index_to_granule_index_rw_structured_buffer[particle_index%max_particle_count];
+    return particle_index_to_granule_index_rw_structured_buffer[particle_index];
 }
 float3 get_particle_position_offset(uint particle_index)
 {
@@ -246,24 +265,26 @@ uint2 find_element_in_particle_in_grid_index(uint grid_index)
     uint last=left;
     return uint2(first,last);
 }
-[numthreads(32,1,1)]
-void UpdateGranuleKernel (uint3 granuleIndex : SV_DispatchThreadID)
+[numthreads(THREAD_GROUP_SIZE_X,1,1)]
+void UpdateGranuleKernel (uint3 granuleIndex : SV_DispatchThreadID, uint3 groupIndex : SV_GroupThreadID)
 {
-    Simulation(granuleIndex);
-}
-
-void Simulation(uint3 granuleIndex : SV_DispatchThreadID)
-{
-    UpdateGranule(granuleIndex.x);
-}
-
-void UpdateGranule(uint granuleIndex)
-{
-    if(granuleIndex>=current_granule_count)
+    if (granuleIndex.x>=current_granule_count)
     {
         return;
     }
+    ///granule_data_group_shared[groupIndex.x]=get_now_granule_data(granuleIndex.x);
     
+    Simulation(granuleIndex,groupIndex);
+    //set_next_state_granule_data(granuleIndex.x,granule_data_group_shared[groupIndex.x]);
+}
+
+void Simulation(uint3 granuleIndex : SV_DispatchThreadID,uint3 groupIndex : SV_GroupThreadID)
+{
+    UpdateGranule(granuleIndex.x,groupIndex);
+}
+
+void UpdateGranule(uint granuleIndex, uint3 groupIndex)
+{
     const granule_data_type granule_data= get_now_granule_data(granuleIndex);
     const uint first_particle_index=granule_data.particle_index_begin;
     const uint last_particle_index=granule_data.particle_index_end;
@@ -332,6 +353,7 @@ float3 get_particle_force(uint particle_index)
         res+=calculate_contact_force_between_two_particle(particle_index,i,granule_data.particle_radius,get_now_granule_data(i).particle_radius);
     }*/
     uint3 grid_index=get_grid_index_uint3(get_now_particle_position(particle_index));
+    [unroll(27)]
     for (i=0;i<27;i++)
     {
         uint3 neighbor_grid_index=grid_index+grid_offset[i];
@@ -391,9 +413,9 @@ float3 calculate_contact_force_with_plane(const uint particle_index, const float
 float3 calculate_contact_force_between_two_particle(const uint particle_index1,const uint particle_index2,const float R1,const float R2)
 {
     if (get_granule_index_of_particle(particle_index1)==get_granule_index_of_particle(particle_index2))return float3(0,0,0);
-    const float3 particle_position1=get_now_particle_position(particle_index1);
+    const float3 particle_position1=particle_position_group_shared[particle_index1%THREAD_GROUP_SIZE_X];
     const float3 particle_position2=get_now_particle_position(particle_index2);
-    const float3 particle_velocity1=get_now_particle_velocity(particle_index1);
+    const float3 particle_velocity1=particle_velocity_group_shared[particle_index1%THREAD_GROUP_SIZE_X];
     const float3 particle_velocity2=get_now_particle_velocity(particle_index2);
     return calculate_contact_force_between_two_particle(particle_position1,particle_position2,particle_velocity1,particle_velocity2,R1,R2);
 }
@@ -402,11 +424,9 @@ float3 calculate_contact_force_between_two_particle(const float3 particle_positi
 {
     const float3 relative_position=particle_position1-particle_position2;
     const float distance_between_particles=length(relative_position);
-    const float overlap_normal=R1+R2-distance_between_particles;
-    if (overlap_normal<=0)return float3(0,0,0);
+    const float overlap_normal=max(R1+R2-distance_between_particles,0);
     const float3 normal_unit_vector=relative_position/distance_between_particles;
     const float3 r1=(R1-overlap_normal/2)*normal_unit_vector;
-    const float3 r2=-(R2-overlap_normal/2)*normal_unit_vector;
     const float3 contact_point=particle_position1+r1;
     const float3 contact_point_v1=particle_velocity1+cross(particle_velocity1,contact_point-particle_position1);
     const float3 contact_point_v2=particle_velocity2+cross(particle_velocity2,contact_point-particle_position2);
@@ -426,23 +446,23 @@ float3 calculate_contact_force_between_two_particle(const float3 particle_positi
     return f_n_vector+f_t_vector;
 }
 
-//链表改为排序
-//float直接转int比大小
-
-[numthreads(32,1,1)]
-void ForceCalculationKernel(uint3 particleIndex : SV_DispatchThreadID)
+[numthreads(THREAD_GROUP_SIZE_X,1,1)]
+void ForceCalculationKernel(uint3 particleIndex : SV_DispatchThreadID,uint groupThreadID : SV_GroupThreadID)
 {
     const uint index=particleIndex.x;
     if (index>=current_particle_count)
     {
         return;
     }
+    particle_position_group_shared[groupThreadID.x]=get_now_particle_position(index);
+    particle_velocity_group_shared[groupThreadID.x]=get_now_particle_velocity(index);
+    GroupMemoryBarrierWithGroupSync();
     const float3 force=get_particle_force(index);
     particle_contact_force_rw_structured_buffer[index]=force;
 
 }
 
-[numthreads(32,1,1)]
+[numthreads(THREAD_GROUP_SIZE_X,1,1)]
 void UpdateParticleKernel(uint3 particleIndex : SV_DispatchThreadID)
 {
     const uint index=particleIndex.x;

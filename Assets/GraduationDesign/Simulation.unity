@@ -586,7 +586,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 27d838a4694cb5a4183f7485a7b8dfe6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxSandCount: 1024
+  maxSandCount: 15000
   particleRadius: 0.07
   particleMass: 1
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
