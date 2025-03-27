@@ -109,7 +109,36 @@ uint2 find_element_in_particle_in_grid_index(uint grid_index);                  
 //--------------常量定义----------------//
 //取消常量定义
 static const float3 g = float3(0,-9.8,0);
-
+static const float3 grid_offset[27]=
+{
+    uint3(0,0,0),
+    uint3(0,0,1),
+    uint3(0,0,-1),
+    uint3(0,1,0),
+    uint3(0,1,1),
+    uint3(0,1,-1),
+    uint3(0,-1,0),
+    uint3(0,-1,1),
+    uint3(0,-1,-1),
+    uint3(1,0,0),
+    uint3(1,0,1),
+    uint3(1,0,-1),
+    uint3(1,1,0),
+    uint3(1,1,1),
+    uint3(1,1,-1),
+    uint3(1,-1,0),
+    uint3(1,-1,1),
+    uint3(1,-1,-1),
+    uint3(-1,0,0),
+    uint3(-1,0,1),
+    uint3(-1,0,-1),
+    uint3(-1,1,0),
+    uint3(-1,1,1),
+    uint3(-1,1,-1),
+    uint3(-1,-1,0),
+    uint3(-1,-1,1),
+    uint3(-1,-1,-1)
+};
 
 
 //--------------函数实现----------------//
