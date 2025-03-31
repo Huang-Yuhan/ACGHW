@@ -40,11 +40,11 @@ groupshared float3 particle_velocity_group_shared[THREAD_GROUP_SIZE_X];
 RWStructuredBuffer<granule_data_type> granule_data_rw_structured_buffer;                            //Granule数据
 groupshared granule_data_type granule_data_group_shared[THREAD_GROUP_SIZE_X];
 ConsumeStructuredBuffer<granule_data_type> granule_data_consume_structured_buffer;                  //Granule数据，用于动态添加
-RWStructuredBuffer<plane_data_type> plane_data_rw_structured_buffer;                                //平面数据
+StructuredBuffer<plane_data_type> plane_data_rw_structured_buffer;                                //平面数据
 groupshared plane_data_type plane_data_group_shared[20];                                            //目前平面比较少
-RWStructuredBuffer<float4x4> inertia_tensor_rw_structured_buffer;                                   //转动惯量
-RWStructuredBuffer<uint> particle_index_to_granule_index_rw_structured_buffer;                      //粒子索引到Granule索引的映射
-RWStructuredBuffer<float3> particle_initial_offset_rw_structured_buffer;                            //粒子初始位置偏移
+StructuredBuffer<float4x4> inertia_tensor_rw_structured_buffer;                                   //转动惯量
+StructuredBuffer<uint> particle_index_to_granule_index_rw_structured_buffer;                      //粒子索引到Granule索引的映射
+StructuredBuffer<float3> particle_initial_offset_rw_structured_buffer;                            //粒子初始位置偏移
 RWStructuredBuffer<float3> particle_contact_force_rw_structured_buffer;                             //粒子接触力,这里是为了加速计算
 RWStructuredBuffer<uint> particle_in_grid_index_rw_structured_buffer;                               //粒子所在网格索引
 RWStructuredBuffer<uint> particle_in_grid_particle_index_rw_structured_buffer;                      //粒子所在网格内的粒子索引,用于充当排序的value
@@ -394,8 +394,8 @@ float3 get_particle_force(uint particle_index)
 float3 calculate_contact_force_with_plane(const uint particle_index, const float R,const uint plane_index)
 {
     float3 res=float3(0,0,0);
-    const float3 particle_position=get_now_particle_position(particle_index);
-    const float3 particle_velocity=get_now_particle_velocity(particle_index);
+    const float3 particle_position=particle_position_group_shared[particle_index%THREAD_GROUP_SIZE_X];
+    const float3 particle_velocity=particle_velocity_group_shared[particle_index%THREAD_GROUP_SIZE_X];
     const plane_data_type plane_data=plane_data_group_shared[plane_index];
 
     const float3 particle_position_offset=particle_position-plane_data.origin;
@@ -418,12 +418,8 @@ float3 calculate_contact_force_with_plane(const uint particle_index, const float
         for (uint y=y_min_index;y<=y_max_index;y++)
         {
             const float3 pos_in_world=plane_data.origin+a_axis*x*plane_data.particle_radius*2+b_axis*y*plane_data.particle_radius*2;
-            if (distance(particle_position,pos_in_world)<R+plane_data.particle_radius)
-            {
-                 
-                float3 force=calculate_contact_force_between_two_particle(particle_position,pos_in_world,particle_velocity,float3(0,0,0),R,plane_data.particle_radius);
-                res+=force;
-            }
+            float3 force=calculate_contact_force_between_two_particle(particle_position,pos_in_world,particle_velocity,float3(0,0,0),R,plane_data.particle_radius);
+            res+=force;
         }
     
     return res;
