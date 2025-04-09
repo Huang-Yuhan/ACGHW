@@ -211,6 +211,8 @@ namespace GraduationDesign
             {
                 granuleData[i].Position = new Vector3(Random.Range(-9f, 9f), Random.Range(1f,5f), Random.Range(-9f, 9f));
                 granuleData[i].Velocity = Random.onUnitSphere;
+                
+                
                 granuleData[i].AngularVelocity = Vector3.zero;
                 granuleData[i].Rotation = Quaternion.identity;
                 granuleData[i].ParticleIndexBegin = (uint)((i * 4)%MaxSandParticleCount);
@@ -308,6 +310,7 @@ namespace GraduationDesign
             AddId("grid_size");
             AddId("grid_origin");
             AddId("buffer_index_begin_multiple_max_granule_count");
+            AddId("grid_resolution");
 
             uint param_size = 0;
             param_size += sizeof(float)*3; //delta_time
@@ -412,6 +415,7 @@ namespace GraduationDesign
             cs.SetFloat(shaderParameterIds["mu"], frictionCoefficient);
             cs.SetInt(shaderParameterIds["plane_count"], PlaneRegister.plane_data.Count);
             cs.SetVector(shaderParameterIds["grid_size"], gridCellSize);
+            cs.SetVector(shaderParameterIds["grid_resolution"],(Vector3)_gridResolution);
             cs.SetVector(shaderParameterIds["grid_origin"], gridOrigin);
             cs.SetInt(shaderParameterIds["buffer_index_begin_multiple_max_granule_count"],_bufferIndexBegin*MaxGranuleCount);
             
@@ -429,6 +433,23 @@ namespace GraduationDesign
                 typeof(uint),
                 true
                 );
+
+#if DEBUG_APPEND
+            int[] particle_in_grid_index_rw_structured_buffer=new int[_buffers["particle_in_grid_index_rw_structured_buffer"].count];
+            int[] particle_in_grid_particle_index_rw_structured_buffer=new int[_buffers["particle_in_grid_particle_index_rw_structured_buffer"].count];
+            _buffers["particle_in_grid_index_rw_structured_buffer"].GetData(particle_in_grid_index_rw_structured_buffer);
+            _buffers["particle_in_grid_particle_index_rw_structured_buffer"].GetData(particle_in_grid_particle_index_rw_structured_buffer);
+            
+            for(int i=0;i<particle_in_grid_index_rw_structured_buffer.Length;i++)
+            {
+                Debug.LogFormat("粒子{0}的grid index为{1}",i,particle_in_grid_index_rw_structured_buffer[i]);
+            }
+            
+            for(int i=0;i<particle_in_grid_particle_index_rw_structured_buffer.Length;i++)
+            {
+                Debug.LogFormat("粒子{0}的grid particle index为{1}",i,particle_in_grid_particle_index_rw_structured_buffer[i]);
+            }
+#endif
             
             //-----------------Force Calculation-----------------//
             ComputeShaderSetBuffer("ForceCalculationKernel","particle_position_rw_structured_buffer");
@@ -479,44 +500,8 @@ namespace GraduationDesign
             
 #if DEBUG_APPEND
             
-            //Debug
-            Vector3[] particle_position = new Vector3[_buffers["particle_position_rw_structured_buffer"].count];
-            Vector3[] particle_velocity = new Vector3[_buffers["particle_velocity_rw_structured_buffer"].count];
-            _buffers["particle_position_rw_structured_buffer"].GetData(particle_position);
-            _buffers["particle_velocity_rw_structured_buffer"].GetData(particle_velocity);
-            uint now_state_begin_index=(uint)(_bufferIndexBegin*_currentParticleCount);
-            uint now_state_end_index=(uint)(now_state_begin_index + _currentParticleCount);
-            uint next_state_begin_index=(uint)((1-_bufferIndexBegin)*_currentParticleCount);
-            uint next_state_end_index=(uint)(next_state_begin_index + _currentParticleCount);
-            
-            Debug.LogFormat("当前状态的粒子状态为:");
-            for(uint i=now_state_begin_index;i<now_state_end_index;i++)
-            {
-                Debug.LogFormat("pos:{0},vel:{1}",particle_position[i],particle_velocity[i]);
-            }
-            Debug.LogFormat("下一状态的粒子状态为:");
-            for(uint i=next_state_begin_index;i<next_state_end_index;i++)
-            {
-                Debug.LogFormat("pos:{0},vel:{1}",particle_position[i],particle_velocity[i]);
-            }
 
-            GranuleDataType[] granule_data = new GranuleDataType[_buffers["granule_data_rw_structured_buffer"].count];
-            _buffers["granule_data_rw_structured_buffer"].GetData(granule_data);
-            now_state_begin_index = (uint)(_bufferIndexBegin * _currentGranuleCount);
-            now_state_end_index = (uint)(now_state_begin_index + _currentGranuleCount);
-            next_state_begin_index = (uint)((1 - _bufferIndexBegin) * _currentGranuleCount);
-            next_state_end_index = (uint)(next_state_begin_index + _currentGranuleCount);
             
-            Debug.LogFormat("当前状态的颗粒状态为:");
-            for(uint i=now_state_begin_index;i<now_state_end_index;i++)
-            {
-                Debug.LogFormat("{0},{1},{2}",granule_data[i].Position,granule_data[i].Velocity,granule_data[i].AngularVelocity);
-            }
-            Debug.LogFormat("下一状态的颗粒状态为:");
-            for(uint i=next_state_begin_index;i<next_state_end_index;i++)
-            {
-                Debug.LogFormat("{0},{1},{2}",granule_data[i].Position,granule_data[i].Velocity,granule_data[i].AngularVelocity);
-            }
             
             
             ComputeBuffer.CopyCount(_buffers["debug_append_structured_buffer"],_buffers["debug_append_count_buffer"],0);

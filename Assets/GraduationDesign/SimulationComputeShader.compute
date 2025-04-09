@@ -5,7 +5,8 @@
 #pragma kernel ForceCalculationKernel
 #pragma kernel UpdateGranuleKernel
 #pragma kernel UpdateParticleKernel
-#pragma shader_feature DEBUG
+#define DEBUG
+#undef DEBUG
 
 #define THREAD_GROUP_SIZE_X 64
 
@@ -69,6 +70,7 @@ cbuffer STATIC_VAR:register(b0)
     uint plane_count;                                                                                   //平面数量
     float3 grid_size;                                                                                   //网格大小
     float3 grid_origin;                                                                                 //网格原点
+    float3 grid_resolution;                                                                                 //网格分辨率
 }
 
 cbuffer DYNAMIC_VAR:register(b1)
@@ -107,6 +109,7 @@ float3 calculate_contact_force_with_plane(const uint particle_index, const float
 uint3 get_grid_index_uint3(float3 position);
 uint get_grid_index_uint(float3 position);
 uint2 find_element_in_particle_in_grid_index(uint grid_index);                                  //找到在buffer里面第一个粒子的索引和最后一个粒子的索引
+uint get_grid_index_from_uint3(uint3 grid_index);
 //--------------常量定义----------------//
 //取消常量定义
 static const float3 g = float3(0,-9.8,0);
@@ -242,7 +245,11 @@ uint3 get_grid_index_uint3(float3 position)
 uint get_grid_index(float3 position)
 {
     uint3 grid_index=get_grid_index_uint3(position);
-    return grid_index.x+grid_index.y*grid_size.x+grid_index.z*grid_size.x*grid_size.y;
+    return get_grid_index_from_uint3(grid_index);
+}
+uint get_grid_index_from_uint3(uint3 grid_index)
+{
+    return grid_index.x+grid_index.y*grid_resolution.x+grid_index.z*grid_resolution.x*grid_resolution.y;
 }
 uint2 find_element_in_particle_in_grid_index(uint grid_index)
 {
@@ -376,11 +383,21 @@ float3 get_particle_force(uint particle_index)
     for (i=0;i<27;i++)
     {
         uint3 neighbor_grid_index=grid_index+grid_offset[i];
-        uint neighbor_grid_index_uint=get_grid_index(neighbor_grid_index);
+        uint neighbor_grid_index_uint=get_grid_index_from_uint3(neighbor_grid_index);
         uint2 element_index=find_element_in_particle_in_grid_index(neighbor_grid_index_uint);
+        #ifdef DEBUG
+            // if (particle_index==0)
+            // {
+            //     debug_append_structured_buffer.Append(neighbor_grid_index);
+            //     debug_append_structured_buffer.Append(uint3(neighbor_grid_index_uint,999,999));
+            //     debug_append_structured_buffer.Append(uint3(element_index.x,element_index.y,999));
+            // }
+
+        #endif
         for (uint j=element_index.x;j<=element_index.y;j++)
         {
             uint neighbor_particle_index=particle_in_grid_particle_index_rw_structured_buffer[j];
+
             res+=calculate_contact_force_between_two_particle(particle_index,neighbor_particle_index,granule_data.particle_radius,get_now_granule_data(get_granule_index_of_particle(neighbor_particle_index)).particle_radius);
         }
     }
@@ -413,6 +430,14 @@ float3 calculate_contact_force_with_plane(const uint particle_index, const float
     const uint x_max_index=ceil(x_max/plane_data.particle_radius/2);
     const uint y_min_index=floor(y_min/plane_data.particle_radius/2);
     const uint y_max_index=ceil(y_max/plane_data.particle_radius/2);
+
+    //根据距离平面的距离增加一个离开平面的力
+    float dis=particle_position_in_plane_space.y;
+    //当dis<0的时候，说明粒子在平面下面，那么就要施加一个力把它推到平面上
+    if (dis<0)
+    {
+        res+=plane_data.normal*pow(-dis,0.5)*k_r;
+    }
 
     for (uint x=x_min_index;x<=x_max_index;x++)
         for (uint y=y_min_index;y<=y_max_index;y++)

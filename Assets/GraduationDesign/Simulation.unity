@@ -586,18 +586,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 27d838a4694cb5a4183f7485a7b8dfe6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxSandCount: 65536
+  maxSandCount: 16384
   particleRadius: 0.07
   particleMass: 1
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
   cs: {fileID: 7200000, guid: 6131c2b9e45082945adb843b11d37add, type: 3}
   isDynamicAdding: 0
-  viscousDampingCoefficient: 35
-  elasticRestorationCoefficient: 10000
+  viscousDampingCoefficient: 20
+  elasticRestorationCoefficient: 2500
   frictionCoefficient: 0.5
   tangentialStiffnessCoefficient: 100
   material: {fileID: 2100000, guid: 1efb0a9e5bd905949ab352e2fa33a023, type: 2}
-  deltaTime: 0.01
+  deltaTime: 0.015
   gridCellSize: {x: 0.2, y: 0.2, z: 0.2}
   gridOrigin: {x: -10, y: 0, z: -10}
   gridLength: {x: 20, y: 5, z: 20}
