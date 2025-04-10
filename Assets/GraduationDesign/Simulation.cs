@@ -9,6 +9,8 @@ using UnityEngine.Serialization;
 using Random = UnityEngine.Random;
 using GPUSorting;
 using GPUSorting.Runtime;
+using UnityEngine.Assertions;
+using UnityEngine.Rendering;
 
 
 namespace GraduationDesign
@@ -209,9 +211,22 @@ namespace GraduationDesign
             uint[] particleGridParticleIndex = new uint[_buffers["particle_in_grid_particle_index_rw_structured_buffer"].count];
             for (int i = 0; i < MaxSandGranuleCount; i++)
             {
-                granuleData[i].Position = new Vector3(Random.Range(-9f, 9f), Random.Range(1f,5f), Random.Range(-9f, 9f));
+                granuleData[i].Position =
+                    new Vector3(Random.Range(-3f, 3f), Random.Range(1f, 5f), Random.Range(-3f, 3f));
                 granuleData[i].Velocity = Random.onUnitSphere;
+
+                if (i == 0)
+                {
+                    granuleData[i].Position = new Vector3(0, 2, 0);
+                    granuleData[i].Velocity = new Vector3(0, 0, 0);
+                }
                 
+                
+                if (i == 1)
+                {
+                    granuleData[i].Position= new Vector3(0, 3, 0);
+                    granuleData[i].Velocity = new Vector3(0, 0, 0);
+                }
                 
                 granuleData[i].AngularVelocity = Vector3.zero;
                 granuleData[i].Rotation = Quaternion.identity;
@@ -229,9 +244,9 @@ namespace GraduationDesign
                         particleIndexToGranuleIndex[index] = (uint)i;
                     if(index<particleInitialOffset.Length)
                         particleInitialOffset[index] = _tetrahedronVertices[j] * particleRadius;
-                    Vector3Int grid_index = new Vector3Int((int)((particlePosition[index].x+10)/gridCellSize.x),
-                        (int)((particlePosition[index].y)/gridCellSize.y),
-                        (int)((particlePosition[index].z+10)/gridCellSize.z));
+                    Vector3Int grid_index = new Vector3Int((int)((particlePosition[index].x-gridOrigin.x)/gridCellSize.x),
+                        (int)((particlePosition[index].y-gridOrigin.y)/gridCellSize.y),
+                        (int)((particlePosition[index].z-gridLength.z)/gridCellSize.z));
                     particleGridIndex[index] = (uint)(grid_index.x+_gridResolution.x*grid_index.y+_gridResolution.x*_gridResolution.y*grid_index.z);
                     particleGridParticleIndex[index] = index;
                 }
@@ -433,6 +448,11 @@ namespace GraduationDesign
                 typeof(uint),
                 true
                 );
+            
+            //显式地等待GPU完成排序
+            AsyncGPUReadback.Request(_buffers["particle_in_grid_index_rw_structured_buffer"]);
+            AsyncGPUReadback.Request(_buffers["particle_in_grid_particle_index_rw_structured_buffer"]);
+            AsyncGPUReadback.WaitAllRequests();
 
 #if DEBUG_APPEND
             int[] particle_in_grid_index_rw_structured_buffer=new int[_buffers["particle_in_grid_index_rw_structured_buffer"].count];
@@ -440,15 +460,17 @@ namespace GraduationDesign
             _buffers["particle_in_grid_index_rw_structured_buffer"].GetData(particle_in_grid_index_rw_structured_buffer);
             _buffers["particle_in_grid_particle_index_rw_structured_buffer"].GetData(particle_in_grid_particle_index_rw_structured_buffer);
             
+            Debug.LogFormat("排序的KV对数为{0}",particle_in_grid_index_rw_structured_buffer.Length);
+            
             for(int i=0;i<particle_in_grid_index_rw_structured_buffer.Length;i++)
             {
-                Debug.LogFormat("粒子{0}的grid index为{1}",i,particle_in_grid_index_rw_structured_buffer[i]);
+                uint grid_index=(uint)particle_in_grid_index_rw_structured_buffer[i];
+                Vector3Int  grid_index_3d=new Vector3Int((int)(grid_index%_gridResolution.x),(int)((grid_index/_gridResolution.x)%_gridResolution.y),(int)(grid_index/(_gridResolution.x*_gridResolution.y)));
+                Assert.AreEqual(grid_index_3d.x+grid_index_3d.y*_gridResolution.x+grid_index_3d.z*_gridResolution.x*_gridResolution.y,particle_in_grid_index_rw_structured_buffer[i]);
+                Debug.LogFormat("(K,V)对为{0},{1}",grid_index_3d,particle_in_grid_particle_index_rw_structured_buffer[i]);
             }
             
-            for(int i=0;i<particle_in_grid_particle_index_rw_structured_buffer.Length;i++)
-            {
-                Debug.LogFormat("粒子{0}的grid particle index为{1}",i,particle_in_grid_particle_index_rw_structured_buffer[i]);
-            }
+
 #endif
             
             //-----------------Force Calculation-----------------//
@@ -501,8 +523,15 @@ namespace GraduationDesign
 #if DEBUG_APPEND
             
 
-            
-            
+            // Vector3[] position = new Vector3[_buffers["particle_position_rw_structured_buffer"].count];
+            // _buffers["particle_position_rw_structured_buffer"].GetData(position);
+            //
+            // for(int i=0;i<position.Length/2;i++)
+            // {
+            //     Debug.LogFormat("粒子{0}的位置为{1}",i,position[i+_bufferIndexBegin*_currentParticleCount]);
+            // }
+
+ 
             
             ComputeBuffer.CopyCount(_buffers["debug_append_structured_buffer"],_buffers["debug_append_count_buffer"],0);
             int[] debug_append_count = new int[1];
@@ -513,8 +542,34 @@ namespace GraduationDesign
                 Debug.Log("debug buffer中的数据为:");
                 Vector3[] debug_append_data=new Vector3[debug_append_count[0]];
                 _buffers["debug_append_structured_buffer"].GetData(debug_append_data);
+  
+                for (int i = 0; i < debug_append_data.Length; i++)
+                {
+                    Debug.Log(debug_append_data[i]);
+                }
+                
                 for(int i=0;i<debug_append_data.Length;i++)
-                    Debug.LogFormat("{0}",debug_append_data[i]);
+                {
+                    if (debug_append_data[i].z.Equals(111f))
+                    {
+                        bool flag = false;
+                        for(int j=0;j<debug_append_data.Length;j++)
+                        {
+                            if(debug_append_data[j].z.Equals(222f)&&
+                               debug_append_data[j].x.Equals(debug_append_data[i].x)&&
+                               debug_append_data[j].y.Equals(debug_append_data[i].y))
+                            {
+                                flag = true;
+                                break;
+                            }
+                        }
+                        if(!flag)
+                        {
+                            Debug.LogFormat("未在邻域搜索中加载粒子{0}和粒子{1}的接触力",debug_append_data[i].x,debug_append_data[i].y);
+                        }
+                    }
+                }
+                
             }
             //清空Append Buffer
             _buffers["debug_append_structured_buffer"].SetCounterValue(0);
