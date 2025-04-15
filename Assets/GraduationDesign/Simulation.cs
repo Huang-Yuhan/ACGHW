@@ -326,25 +326,6 @@ namespace GraduationDesign
             AddId("grid_origin");
             AddId("buffer_index_begin_multiple_max_granule_count");
             AddId("grid_resolution");
-
-            uint param_size = 0;
-            param_size += sizeof(float)*3; //delta_time
-            param_size += sizeof(int); //current_granule_count
-            param_size += sizeof(int); //max_granule_count
-            param_size += sizeof(int); //current_particle_count
-            param_size += sizeof(int); //max_particle_count
-            param_size += sizeof(float); //particle_mass
-            param_size += sizeof(float); //particle_radius
-            param_size += sizeof(int); //consume_granule_count
-            param_size += sizeof(int); //buffer_index_begin
-            param_size += sizeof(float); //k_d
-            param_size += sizeof(float); //k_r
-            param_size += sizeof(float); //k_t
-            param_size += sizeof(float); //mu
-            param_size += sizeof(int); //plane_count
-            param_size += sizeof(float)*4*4; //I_inverse_initial
-            param_size += sizeof(float)*3; //grid_size
-            param_size += sizeof(float)*3; //grid_origin
             
         }
 
