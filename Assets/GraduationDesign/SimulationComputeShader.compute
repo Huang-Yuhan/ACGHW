@@ -5,6 +5,7 @@
 #pragma kernel ForceCalculationKernel
 #pragma kernel UpdateGranuleKernel
 #pragma kernel UpdateParticleKernel
+#pragma kernel UpdateRigidBodyData
 #define DEBUG
 #undef DEBUG
 
@@ -20,6 +21,7 @@ struct granule_data_type
     uint particle_index_begin;
     uint particle_index_end;
     uint initial_inertia_tensor_index;
+    uint isControlledBySimulation;
     float particle_radius;
     float particle_mass;
 };
@@ -31,6 +33,14 @@ struct plane_data_type
     float3 a_axis;
     float3 b_axis;
     float particle_radius;
+};
+
+struct CPU_TO_GPU_RigidBodyDataType
+{
+    uint IsControlledBySimulation;
+    uint IndexInGranuleData;
+    float3 Position;
+    float4 Rotation;
 };
 
 //--------------Compute Buffer定义----------------//
@@ -45,6 +55,7 @@ StructuredBuffer<float3> particle_initial_offset_rw_structured_buffer;          
 RWStructuredBuffer<float3> particle_contact_force_rw_structured_buffer;                             //粒子接触力,这里是为了加速计算
 RWStructuredBuffer<uint> particle_in_grid_index_rw_structured_buffer;                               //粒子所在网格索引
 RWStructuredBuffer<uint> particle_in_grid_particle_index_rw_structured_buffer;                      //粒子所在网格内的粒子索引,用于充当排序的value
+RWStructuredBuffer<CPU_TO_GPU_RigidBodyDataType> CPU_TO_GPU_RigidBodyDataBuffer;
 
 #ifdef DEBUG
 AppendStructuredBuffer<float3> debug_append_structured_buffer;                                      //for debug
@@ -67,6 +78,7 @@ cbuffer STATIC_VAR:register(b0)
     float3 grid_size;                                                                                   //网格大小
     float3 grid_origin;                                                                                 //网格原点
     uint3 grid_resolution;                                                                                 //网格分辨率
+    uint cpu_to_gpu_rigidbodydata_count;                                                                    //cpu到gpu的刚体数据数量
 }
 
 cbuffer DYNAMIC_VAR:register(b1)
@@ -156,7 +168,6 @@ granule_data_type get_now_granule_data(uint index)
 {
     return granule_data_rw_structured_buffer[get_now_granule_index(index)];
 }
-
 void set_now_particle_position(uint index, float3 position)
 {
     particle_position_rw_structured_buffer[get_now_particle_index(index)]=position;
@@ -295,7 +306,6 @@ void UpdateGranuleKernel (uint3 granuleIndex : SV_DispatchThreadID, uint3 groupI
         return;
     }
     ///granule_data_group_shared[groupIndex.x]=get_now_granule_data(granuleIndex.x);
-    
     Simulation(granuleIndex,groupIndex);
     //set_next_state_granule_data(granuleIndex.x,granule_data_group_shared[groupIndex.x]);
 }
@@ -308,6 +318,7 @@ void Simulation(uint3 granuleIndex : SV_DispatchThreadID,uint3 groupIndex : SV_G
 void UpdateGranule(uint granuleIndex, uint3 groupIndex)
 {
     const granule_data_type granule_data= get_now_granule_data(granuleIndex);
+    if (granule_data.isControlledBySimulation==0)return;
     const uint first_particle_index=granule_data.particle_index_begin;
     const uint last_particle_index=granule_data.particle_index_end;
     
@@ -347,7 +358,17 @@ void UpdateGranule(uint granuleIndex, uint3 groupIndex)
     granule_data_new.initial_inertia_tensor_index=granule_data.initial_inertia_tensor_index;
     granule_data_new.particle_radius=granule_data.particle_radius;
     granule_data_new.particle_mass=granule_data.particle_mass;
+    granule_data_new.isControlledBySimulation=granule_data.isControlledBySimulation;
     set_next_state_granule_data(granuleIndex,granule_data_new);
+
+    if (granule_data_new.isControlledBySimulation==1)
+    {
+        uint index_in_cpu_to_gpu_rigidbodydata=granuleIndex-(current_granule_count-cpu_to_gpu_rigidbodydata_count);
+        CPU_TO_GPU_RigidBodyDataBuffer[index_in_cpu_to_gpu_rigidbodydata].Position=granule_data_new.position;
+        CPU_TO_GPU_RigidBodyDataBuffer[index_in_cpu_to_gpu_rigidbodydata].Rotation=granule_data_new.quaternion;
+        CPU_TO_GPU_RigidBodyDataBuffer[index_in_cpu_to_gpu_rigidbodydata].IsControlledBySimulation=1;
+        CPU_TO_GPU_RigidBodyDataBuffer[index_in_cpu_to_gpu_rigidbodydata].IndexInGranuleData=granuleIndex;
+    }
     
 }
 
@@ -509,6 +530,8 @@ void ForceCalculationKernel(uint3 particleIndex : SV_DispatchThreadID,uint group
     {
         return;
     }
+    const granule_data_type granule_data=get_now_granule_data(get_granule_index_of_particle(index));
+    if (granule_data.isControlledBySimulation==false)return;
     const float3 force=get_particle_force(index);
     particle_contact_force_rw_structured_buffer[index]=force;
 
@@ -524,4 +547,35 @@ void UpdateParticleKernel(uint3 particleIndex : SV_DispatchThreadID)
     }
     const granule_data_type granule_data=granule_data_rw_structured_buffer[get_next_state_granule_index(get_granule_index_of_particle(index))];
     UpdateParticle(index,granule_data);
+}
+
+[numthreads(THREAD_GROUP_SIZE_X,1,1)]
+void UpdateRigidBodyData(uint3 granuleIndex : SV_DispatchThreadID)
+{
+    if (granuleIndex.x>=current_granule_count)return;
+    if (granuleIndex.x<current_granule_count-cpu_to_gpu_rigidbodydata_count)return;
+    const uint index=CPU_TO_GPU_RigidBodyDataBuffer[granuleIndex.x].IndexInGranuleData;
+    if (index>=current_granule_count)
+    {
+        return;
+    }
+    granule_data_type granule_data=granule_data_rw_structured_buffer[get_next_state_granule_index(index)];
+    if (granule_data.isControlledBySimulation==1)
+    {
+        //返回granule数据
+        CPU_TO_GPU_RigidBodyDataBuffer[granuleIndex.x].Position=granule_data.position;
+        CPU_TO_GPU_RigidBodyDataBuffer[granuleIndex.x].Rotation=granule_data.quaternion;
+    }
+    else
+    {
+        //更新granule数据
+        granule_data_rw_structured_buffer[get_next_state_granule_index(index)]=granule_data;
+        granule_data.position=CPU_TO_GPU_RigidBodyDataBuffer[granuleIndex.x].Position;
+        granule_data.quaternion=CPU_TO_GPU_RigidBodyDataBuffer[granuleIndex.x].Rotation;
+        granule_data.velocity=float3(0,0,0);
+        granule_data.angular_velocity=float3(0,0,0);
+        granule_data.isControlledBySimulation=0;
+        set_next_state_granule_data(index,granule_data);
+        
+    }
 }

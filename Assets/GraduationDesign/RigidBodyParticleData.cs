@@ -17,5 +17,6 @@ namespace GraduationDesign
         public List<Vector3> RigidBodiesParticleInitialOffset;
         public float ParticleRadius;
         public float ParticleMass;
+        public uint isControlledBySimulation;
     }
 }

@@ -79,11 +79,12 @@ namespace GraduationDesign
             public uint ParticleIndexBegin;
             public uint ParticleIndexEnd;
             public uint InitialInertiaTensorIndex;
+            public uint IsControlledBySimulation;
             public float ParticleRadius;
             public float ParticleMass;
             public static int GetSize()
             {
-                return sizeof(float) * 3 * 3 + sizeof(float) * 4 + sizeof(uint) * 3 + sizeof(float)+sizeof(float);
+                return sizeof(float) * 3 * 3 + sizeof(float) * 4 + sizeof(uint) * 4 + sizeof(float)+sizeof(float);
             }
         }
         
@@ -109,6 +110,27 @@ namespace GraduationDesign
             }
         }
         
+        //-----------------rigid body related---------------//
+        public struct RigidBodyPair
+        {
+            public uint indexInGranuleData;
+            public GameObject gameObject;
+        }
+        List<RigidBodyPair> _rigidBodyPairs = new List<RigidBodyPair>();
+
+        public struct CPU_TO_GPU_RigidBodyDataType
+        {
+            public uint IsControlledBySimulation;
+            public uint IndexInGranuleData;
+            public Vector3 Position;
+            public Quaternion Rotation;
+            public static int GetSize()
+            {
+                return sizeof(float) * 3 + sizeof(float) * 4 + sizeof(uint) * 2;
+            }
+        }
+        CPU_TO_GPU_RigidBodyDataType[] _CPU_TO_GPU_RigidBodyData;
+        
         //-----------------Kernels-----------------//
         Dictionary<string,int> _kernels = new Dictionary<string, int>();
         
@@ -132,6 +154,7 @@ namespace GraduationDesign
             ComputeBuffer _particle_contact_force_rw_structured_buffer=new ComputeBuffer(MaxParticleCount,sizeof(float) * 3);
             ComputeBuffer _particle_in_grid_index_rw_structured_buffer=new ComputeBuffer(MaxParticleCount,sizeof(uint));
             ComputeBuffer _particle_in_grid_particle_index_rw_structured_buffer=new ComputeBuffer(MaxParticleCount,sizeof(uint));
+            ComputeBuffer CPU_TO_GPU_RigidBodyDataBuffer=new ComputeBuffer(RigidBodyRegister.RigidBodyData.Count,CPU_TO_GPU_RigidBodyDataType.GetSize());
             
             
             #if DEBUG_APPEND
@@ -156,6 +179,7 @@ namespace GraduationDesign
             AddComputeBuffer("temp1Buffer",temp1Buffer);
             AddComputeBuffer("temp2Buffer",temp2Buffer);
             AddComputeBuffer("temp3Buffer",temp3Buffer);
+            AddComputeBuffer("CPU_TO_GPU_RigidBodyDataBuffer",CPU_TO_GPU_RigidBodyDataBuffer);
             #if DEBUG_APPEND
             AddComputeBuffer("debug_append_structured_buffer",_debug_append_structured_buffer);
             AddComputeBuffer("debug_append_count_buffer",debug_append_count_buffer);
@@ -166,6 +190,7 @@ namespace GraduationDesign
             AddKernel("UpdateGranuleKernel");
             AddKernel("ForceCalculationKernel");
             AddKernel("UpdateParticleKernel");
+            AddKernel("UpdateRigidBodyData");
 
 
         }
@@ -209,6 +234,7 @@ namespace GraduationDesign
             Vector3[] particleInitialOffset = new Vector3[_buffers["particle_initial_offset_rw_structured_buffer"].count];
             uint[] particleGridIndex = new uint[_buffers["particle_in_grid_index_rw_structured_buffer"].count];
             uint[] particleGridParticleIndex = new uint[_buffers["particle_in_grid_particle_index_rw_structured_buffer"].count];
+            _CPU_TO_GPU_RigidBodyData=new CPU_TO_GPU_RigidBodyDataType[RigidBodyRegister.RigidBodyData.Count];
             for (int i = 0; i < MaxSandGranuleCount; i++)
             {
                 granuleData[i].Position =
@@ -235,6 +261,7 @@ namespace GraduationDesign
                 granuleData[i].InitialInertiaTensorIndex = 0;           //因为沙粒的模型都是一样的。所以这里直接设置为0
                 granuleData[i].ParticleRadius = particleRadius;
                 granuleData[i].ParticleMass=particleMass;
+                granuleData[i].IsControlledBySimulation = 1;
                 for(int j=0;j<4;j++)
                 {
                     uint index = (uint)(i * 4 + j);
@@ -262,33 +289,58 @@ namespace GraduationDesign
             for (int i = 0; i < RigidBodyRegister.RigidBodyData.Count; i++)
             {
                 GranuleDataType data = new GranuleDataType();
-                data.Position = RigidBodyRegister.RigidBodyData[i].Position;
-                data.Velocity = RigidBodyRegister.RigidBodyData[i].Velocity;
-                data.AngularVelocity = RigidBodyRegister.RigidBodyData[i].AngularVelocity;
-                data.Rotation = RigidBodyRegister.RigidBodyData[i].Rotation;
+                var registerData = RigidBodyRegister.RigidBodyData[i].data;
+                data.Position = registerData.Position;
+                data.Velocity = registerData.Velocity;
+                data.AngularVelocity = registerData.AngularVelocity;
+                data.Rotation = registerData.Rotation;
                 data.ParticleIndexBegin = (uint)(preParticleCount);
-                data.ParticleIndexEnd = (uint)(preParticleCount+RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset.Count-1);
+                data.ParticleIndexEnd = (uint)(preParticleCount+registerData.RigidBodiesParticleInitialOffset.Count-1);
                 data.InitialInertiaTensorIndex = (uint)(inertia_tensor_list.Count);
-                data.ParticleRadius=RigidBodyRegister.RigidBodyData[i].ParticleRadius;
-                data.ParticleMass=RigidBodyRegister.RigidBodyData[i].ParticleMass;
-                inertia_tensor_list.Add(CalculateRefererenceInertiaTensor(RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset).inverse);
+                data.ParticleRadius=registerData.ParticleRadius;
+                data.ParticleMass=registerData.ParticleMass;
+                data.IsControlledBySimulation = registerData.isControlledBySimulation;
+                inertia_tensor_list.Add(CalculateRefererenceInertiaTensor(registerData.RigidBodiesParticleInitialOffset).inverse);
                 granuleData[preGranuleCount + i] = data;
-                for (int j = 0; j < RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset.Count; j++)
+                for (int j = 0; j < registerData.RigidBodiesParticleInitialOffset.Count; j++)
                 {
                     uint index = (uint)(preParticleCount + j);
-                    particlePosition[index] = RigidBodyRegister.RigidBodyData[i].Position + RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset[j];
-                    particleVelocity[index] = RigidBodyRegister.RigidBodyData[i].Velocity;
+                    particlePosition[index] = registerData.Position + registerData.RigidBodiesParticleInitialOffset[j];
+                    particleVelocity[index] = registerData.Velocity;
                     if(index<particleIndexToGranuleIndex.Length)
                         particleIndexToGranuleIndex[index] = (uint)(preGranuleCount+i);
                     if(index<particleInitialOffset.Length)
-                        particleInitialOffset[index] = RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset[j];
+                        particleInitialOffset[index] = registerData.RigidBodiesParticleInitialOffset[j];
                     
                     Vector3Int grid_index = new Vector3Int((int)((particlePosition[index].x-gridOrigin.x)/gridCellSize.x),(int)((particlePosition[index].y-gridOrigin.y)/gridCellSize.y),(int)((particlePosition[index].z-gridOrigin.z)/gridCellSize.z));
                     particleGridIndex[index] = (uint)(grid_index.x+_gridResolution.x*grid_index.y+_gridResolution.x*_gridResolution.y*grid_index.z);
                     particleGridParticleIndex[index] = index;
                 }
-                preParticleCount += RigidBodyRegister.RigidBodyData[i].RigidBodiesParticleInitialOffset.Count;
+                preParticleCount += registerData.RigidBodiesParticleInitialOffset.Count;
                 preGranuleCount++;
+                
+                RigidBodyPair pair = new RigidBodyPair();
+                pair.indexInGranuleData = (uint)(preGranuleCount + i);
+                pair.gameObject = RigidBodyRegister.RigidBodyData[i].gameObject;
+                _rigidBodyPairs.Add(pair);
+                _CPU_TO_GPU_RigidBodyData[i].IsControlledBySimulation = registerData.isControlledBySimulation;
+                _CPU_TO_GPU_RigidBodyData[i].Position = registerData.Position;
+                _CPU_TO_GPU_RigidBodyData[i].Rotation = registerData.Rotation;
+                _CPU_TO_GPU_RigidBodyData[i].IndexInGranuleData = pair.indexInGranuleData;
+            }
+            
+            //开两倍空间的buffer都要将前半部分复制到后半部分
+            for(int i=0;i<granuleData.Length/2;i++)
+            {
+                granuleData[i+granuleData.Length/2]=granuleData[i];
+            }
+            for(int i=0;i<particlePosition.Length/2;i++)
+            {
+                particlePosition[i+particlePosition.Length/2]=particlePosition[i];
+            }
+            for(int i=0;i<particleVelocity.Length/2;i++)
+            {
+                particleVelocity[i+particleVelocity.Length/2]=particleVelocity[i];
             }
             
             //---------------设置Buffer Data---------------//
@@ -301,6 +353,7 @@ namespace GraduationDesign
             _buffers["particle_initial_offset_rw_structured_buffer"].SetData(particleInitialOffset);
             _buffers["particle_in_grid_index_rw_structured_buffer"].SetData(particleGridIndex);
             _buffers["particle_in_grid_particle_index_rw_structured_buffer"].SetData(particleGridParticleIndex);
+            _buffers["CPU_TO_GPU_RigidBodyDataBuffer"].SetData(_CPU_TO_GPU_RigidBodyData);
             #if DEBUG_APPEND
             _buffers["debug_append_structured_buffer"].SetCounterValue(0);
             #endif
@@ -326,6 +379,7 @@ namespace GraduationDesign
             AddId("grid_origin");
             AddId("buffer_index_begin_multiple_max_granule_count");
             AddId("grid_resolution");
+            AddId("cpu_to_gpu_rigidbodydata_count");
             
         }
 
@@ -414,6 +468,7 @@ namespace GraduationDesign
             cs.SetVector(shaderParameterIds["grid_resolution"],(Vector3)_gridResolution);
             cs.SetVector(shaderParameterIds["grid_origin"], gridOrigin);
             cs.SetInt(shaderParameterIds["buffer_index_begin_multiple_max_granule_count"],_bufferIndexBegin*MaxGranuleCount);
+            cs.SetInt(shaderParameterIds["cpu_to_gpu_rigidbodydata_count"], RigidBodyRegister.RigidBodyData.Count);
             
             
             //-----------------GPU Sort-----------------//
@@ -481,12 +536,42 @@ namespace GraduationDesign
             ComputeShaderSetBuffer("UpdateGranuleKernel","particle_index_to_granule_index_rw_structured_buffer");
             ComputeShaderSetBuffer("UpdateGranuleKernel","particle_initial_offset_rw_structured_buffer");
             ComputeShaderSetBuffer("UpdateGranuleKernel","particle_contact_force_rw_structured_buffer");
+            ComputeShaderSetBuffer("UpdateGranuleKernel","CPU_TO_GPU_RigidBodyDataBuffer");
 #if DEBUG_APPEND
             ComputeShaderSetBuffer("UpdateGranuleKernel","debug_append_structured_buffer");
 #endif
             
             
             cs.Dispatch(_kernels["UpdateGranuleKernel"],Mathf.CeilToInt(_currentGranuleCount/THREAD_GROUP_SIZE_X), 1, 1);
+
+            
+            _buffers["CPU_TO_GPU_RigidBodyDataBuffer"].GetData(_CPU_TO_GPU_RigidBodyData);
+            
+            for (int i = 0; i < _CPU_TO_GPU_RigidBodyData.Length; i++)
+            {
+                if (_CPU_TO_GPU_RigidBodyData[i].IsControlledBySimulation == 0)
+                {
+                    _CPU_TO_GPU_RigidBodyData[i].Position = _rigidBodyPairs[i].gameObject.transform.position;
+                    _CPU_TO_GPU_RigidBodyData[i].Rotation = _rigidBodyPairs[i].gameObject.transform.rotation;
+                }
+                else
+                {
+                    _rigidBodyPairs[i].gameObject.transform.position = _CPU_TO_GPU_RigidBodyData[i].Position;
+                    _rigidBodyPairs[i].gameObject.transform.rotation = _CPU_TO_GPU_RigidBodyData[i].Rotation;
+                }
+            }
+            _buffers["CPU_TO_GPU_RigidBodyDataBuffer"].SetData(_CPU_TO_GPU_RigidBodyData);
+            
+            //---------------UpdateRigidBodyData---------------//
+            ComputeShaderSetBuffer("UpdateRigidBodyData","CPU_TO_GPU_RigidBodyDataBuffer");
+            ComputeShaderSetBuffer("UpdateRigidBodyData","granule_data_rw_structured_buffer");
+            
+            
+#if DEBUG_APPEND
+            ComputeShaderSetBuffer("UpdateRigidBodyData","debug_append_structured_buffer");
+#endif
+            cs.Dispatch(_kernels["UpdateRigidBodyData"],Mathf.CeilToInt(_currentGranuleCount/THREAD_GROUP_SIZE_X), 1, 1);
+            
             
             //-----------------UpdateParticleKernel-----------------//
             ComputeShaderSetBuffer("UpdateParticleKernel","particle_position_rw_structured_buffer");
@@ -498,7 +583,9 @@ namespace GraduationDesign
             ComputeShaderSetBuffer("UpdateParticleKernel","particle_in_grid_particle_index_rw_structured_buffer");
             
             cs.Dispatch(_kernels["UpdateParticleKernel"],Mathf.CeilToInt(_currentParticleCount/THREAD_GROUP_SIZE_X), 1, 1);
- 
+
+            
+
 
             
 #if DEBUG_APPEND

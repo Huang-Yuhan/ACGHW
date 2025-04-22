@@ -8,7 +8,7 @@ namespace GraduationDesign
 {
     public class RigidBodyRegister : MonoBehaviour
     {
-        public static List<RigidBodyParticleData> RigidBodyData = new List<RigidBodyParticleData>();
+        public static List<RigidBodyDataType> RigidBodyData = new List<RigidBodyDataType>();
 
         public static int ParticleSum
         {
@@ -17,25 +17,22 @@ namespace GraduationDesign
                 int sum = 0;
                 for(int i=0;i<RigidBodyData.Count;i++)
                 {
-                    sum += RigidBodyData[i].RigidBodiesParticleInitialOffset.Count;
+                    sum += RigidBodyData[i].data.RigidBodiesParticleInitialOffset.Count;
                 }
                 return sum;
             }
         }
-        public struct RegisterDataType
+        
+        public struct RigidBodyDataType
         {
-            public Vector3 Position;
-            public Vector3 Velocity;
-            public Vector3 AngularVelocity;
-            public Quaternion Rotation;
-            public List<Vector3> RigidBodiesParticleInitialOffset;
-            public float ParticleRadius;
-            public float ParticleMass;
+            public RigidBodyParticleData data;
+            public GameObject gameObject;
         }
         
         public float particle_radius = 0.1f;
         public float mass;
         public RigidBodyParticleData rigidBodyParticleData;
+        public bool isControlledBySimulation = false;
         public bool isDisplayParticle = false;
         public float lowerBound = 0.1f;
 
@@ -63,7 +60,10 @@ namespace GraduationDesign
                 Debug.LogWarning("No rigid body type selected");
                 return;
             }
-            RigidBodyData.Add(rigidBodyParticleData);
+            var registerData = new RigidBodyDataType();
+            registerData.data = rigidBodyParticleData;
+            registerData.gameObject = gameObject;
+            RigidBodyData.Add(registerData);
         }
 
         // RegisterDataType GenerateCube()
@@ -194,6 +194,7 @@ namespace GraduationDesign
             data.RigidBodiesParticleInitialOffset = new List<Vector3>(result);
             data.ParticleRadius = particle_radius;
             data.ParticleMass = mass;
+            data.isControlledBySimulation = isControlledBySimulation? 1u : 0u;
             Debug.LogFormat("Custom Particle Count: {0}", result.Length);
             
             return data;
@@ -221,7 +222,8 @@ namespace GraduationDesign
             for (int i = 0; i < offsets.Count; i++)
             {
                 Gizmos.color = Color.red;
-                Gizmos.DrawSphere(rigidBodyParticleData.Position+ offsets[i], particle_radius);
+                var pos = transform.position + Quaternion.Euler(rigidBodyParticleData.Rotation.eulerAngles) * offsets[i];
+                Gizmos.DrawSphere(pos, particle_radius);
             }
 
             
