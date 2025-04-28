@@ -554,27 +554,22 @@ void UpdateRigidBodyData(uint3 granuleIndex : SV_DispatchThreadID)
 {
     if (granuleIndex.x>=current_granule_count)return;
     if (granuleIndex.x<current_granule_count-cpu_to_gpu_rigidbodydata_count)return;
-    const uint index=CPU_TO_GPU_RigidBodyDataBuffer[granuleIndex.x].IndexInGranuleData;
-    if (index>=current_granule_count)
-    {
-        return;
-    }
+    const uint index=granuleIndex.x;
+    const uint indexInCPUToGPURigidBodyData=index-(current_granule_count-cpu_to_gpu_rigidbodydata_count);
     granule_data_type granule_data=granule_data_rw_structured_buffer[get_next_state_granule_index(index)];
     if (granule_data.isControlledBySimulation==1)
     {
         //返回granule数据
-        CPU_TO_GPU_RigidBodyDataBuffer[granuleIndex.x].Position=granule_data.position;
-        CPU_TO_GPU_RigidBodyDataBuffer[granuleIndex.x].Rotation=granule_data.quaternion;
+        CPU_TO_GPU_RigidBodyDataBuffer[indexInCPUToGPURigidBodyData].Position=granule_data.position;
+        CPU_TO_GPU_RigidBodyDataBuffer[indexInCPUToGPURigidBodyData].Rotation=granule_data.quaternion;
     }
     else
     {
         //更新granule数据
-        granule_data_rw_structured_buffer[get_next_state_granule_index(index)]=granule_data;
-        granule_data.position=CPU_TO_GPU_RigidBodyDataBuffer[granuleIndex.x].Position;
-        granule_data.quaternion=CPU_TO_GPU_RigidBodyDataBuffer[granuleIndex.x].Rotation;
+        granule_data.position=CPU_TO_GPU_RigidBodyDataBuffer[indexInCPUToGPURigidBodyData].Position;
+        granule_data.quaternion=CPU_TO_GPU_RigidBodyDataBuffer[indexInCPUToGPURigidBodyData].Rotation;
         granule_data.velocity=float3(0,0,0);
         granule_data.angular_velocity=float3(0,0,0);
-        granule_data.isControlledBySimulation=0;
         set_next_state_granule_data(index,granule_data);
         
     }

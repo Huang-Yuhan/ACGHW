@@ -54,7 +54,6 @@ namespace GraduationDesign
         private ComputeBuffer temp1Buffer;
         private ComputeBuffer temp2Buffer;
         private ComputeBuffer temp3Buffer;
-    
         
         //---------------一些提前设置---------------//
         
@@ -551,6 +550,7 @@ namespace GraduationDesign
             {
                 if (_CPU_TO_GPU_RigidBodyData[i].IsControlledBySimulation == 0)
                 {
+                    Debug.LogFormat("{2}:{0} {1}",_CPU_TO_GPU_RigidBodyData[i].Position,_CPU_TO_GPU_RigidBodyData[i].Rotation,i);
                     _CPU_TO_GPU_RigidBodyData[i].Position = _rigidBodyPairs[i].gameObject.transform.position;
                     _CPU_TO_GPU_RigidBodyData[i].Rotation = _rigidBodyPairs[i].gameObject.transform.rotation;
                 }
