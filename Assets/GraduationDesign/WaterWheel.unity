@@ -644,7 +644,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 6cc92894c8d468a4aa5664cf33f94f66, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 3.55
+      value: 3.91
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 6cc92894c8d468a4aa5664cf33f94f66, type: 3}
       propertyPath: m_LocalPosition.z
@@ -717,7 +717,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d4220f9b948a6d44a80f750907172d8e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  particle_radius: 0.1
+  particle_radius: 0.05
   mass: 0
   rigidBodyParticleData: {fileID: 11400000, guid: 3d6f073e2e6bc6e469e892c2834d3c03, type: 2}
   isControlledBySimulation: 0
@@ -737,6 +737,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   lastPosition: {x: 0, y: 0, z: 0}
   lastRotation: {x: 0, y: 0, z: 0, w: 0}
+  lastUpdateVelocity: {x: 0, y: 0, z: 0}
+  lastUpdateAngularVelocity: {x: 0, y: 0, z: 0}
 --- !u!114 &424073624
 MonoBehaviour:
   m_ObjectHideFlags: 0
