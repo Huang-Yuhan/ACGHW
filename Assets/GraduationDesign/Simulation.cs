@@ -124,9 +124,12 @@ namespace GraduationDesign
             public Vector3 Position;
             public Quaternion Rotation;
             public Vector3 Velocity;
+            public Vector3 AngularVelocity;
             public static int GetSize()
             {
-                return sizeof(float) * 3 + sizeof(float) * 4 + sizeof(uint) * 2+sizeof(float) * 3;
+                return sizeof(uint)*2+
+                       sizeof(float)*3*3+
+                       sizeof(float)*4;
             }
         }
         CPU_TO_GPU_RigidBodyDataType[] _CPU_TO_GPU_RigidBodyData;
@@ -551,9 +554,12 @@ namespace GraduationDesign
             {
                 if (_CPU_TO_GPU_RigidBodyData[i].IsControlledBySimulation == 0)
                 {
-                    Debug.LogFormat("{2}:{0} {1}",_CPU_TO_GPU_RigidBodyData[i].Position,_CPU_TO_GPU_RigidBodyData[i].Rotation,i);
                     _CPU_TO_GPU_RigidBodyData[i].Position = _rigidBodyPairs[i].gameObject.transform.position;
                     _CPU_TO_GPU_RigidBodyData[i].Rotation = _rigidBodyPairs[i].gameObject.transform.rotation;
+                    _CPU_TO_GPU_RigidBodyData[i].Velocity = _rigidBodyPairs[i].gameObject.GetComponent<LastTransform>()
+                        .lastUpdateVelocity;
+                    _CPU_TO_GPU_RigidBodyData[i].AngularVelocity = _rigidBodyPairs[i].gameObject
+                        .GetComponent<LastTransform>().lastUpdateAngularVelocity;
                 }
                 else
                 {

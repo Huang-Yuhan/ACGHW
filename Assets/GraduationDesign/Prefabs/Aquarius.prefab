@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 6055641381836942228}
   - component: {fileID: 1741269970559784382}
   - component: {fileID: 2231822941184235555}
+  - component: {fileID: 7842689522845313379}
   m_Layer: 0
   m_Name: Aquarius
   m_TagString: Untagged
@@ -100,5 +101,19 @@ MonoBehaviour:
   particle_radius: 0.01
   mass: 0
   rigidBodyParticleData: {fileID: 11400000, guid: 84895078b4ac3ab4592dc8a488af395e, type: 2}
+  isControlledBySimulation: 0
   isDisplayParticle: 1
   lowerBound: 0.01
+--- !u!114 &7842689522845313379
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3693774479100512700}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a81f90cd684c32c41805956b34fe4e64, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  lastUpdateTransform: {fileID: 0}

@@ -42,6 +42,7 @@ struct CPU_TO_GPU_RigidBodyDataType
     float3 Position;
     float4 Rotation;
     float3 Velocity;
+    float3 AngularVelocity;
 };
 
 //--------------Compute Buffer定义----------------//
@@ -569,8 +570,8 @@ void UpdateRigidBodyData(uint3 granuleIndex : SV_DispatchThreadID)
         //更新granule数据
         granule_data.position=CPU_TO_GPU_RigidBodyDataBuffer[indexInCPUToGPURigidBodyData].Position;
         granule_data.quaternion=CPU_TO_GPU_RigidBodyDataBuffer[indexInCPUToGPURigidBodyData].Rotation;
-        granule_data.velocity=float3(0,0,0);
-        granule_data.angular_velocity=float3(0,0,0);
+        granule_data.velocity=CPU_TO_GPU_RigidBodyDataBuffer[indexInCPUToGPURigidBodyData].Velocity;
+        granule_data.angular_velocity=CPU_TO_GPU_RigidBodyDataBuffer[indexInCPUToGPURigidBodyData].AngularVelocity;
         set_next_state_granule_data(index,granule_data);
         
     }
