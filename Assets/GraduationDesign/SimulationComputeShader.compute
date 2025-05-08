@@ -41,6 +41,7 @@ struct CPU_TO_GPU_RigidBodyDataType
     uint IndexInGranuleData;
     float3 Position;
     float4 Rotation;
+    float3 Velocity;
 };
 
 //--------------Compute Buffer定义----------------//
@@ -219,8 +220,8 @@ float3 get_particle_position_offset(uint particle_index)
 float3x3 QuaternionToMatrix(float4 quaternion)
 {
     float3x3 result;
-    float s= quaternion.x;
-    float3 v = quaternion.yzw;
+    float s= quaternion.w;
+    float3 v = quaternion.xyz;
     result[0][0] = 1-2*v.y*v.y-2*v.z*v.z;
     result[0][1] = 2*v.x*v.y-2*s*v.z;
     result[0][2] = 2*v.x*v.z+2*s*v.y;
@@ -235,10 +236,10 @@ float3x3 QuaternionToMatrix(float4 quaternion)
 float4 quaternionMul(float4 q1,float4 q2)
 {
     float4 result;
-    float s1 = q1.x;
-    float s2 = q2.x;
-    float3 v1 = q1.yzw;
-    float3 v2 = q2.yzw;
+    float s1 = q1.w;
+    float s2 = q2.w;
+    float3 v1 = q1.xyz;
+    float3 v2 = q2.xyz;
 
     result.x = s1*s2-dot(v1,v2);
     result.yzw = s1*v2+s2*v1+cross(v1,v2);
@@ -347,7 +348,7 @@ void UpdateGranule(uint granuleIndex, uint3 groupIndex)
     const float3 acceleration=sum_force/granule_data.particle_mass/(last_particle_index-first_particle_index+1);
     const float3 velocity=granule_data.velocity+acceleration*delta_time;
     const float3 position=granule_data.position+velocity*delta_time;
-    const float4 quaternion=normalize(granule_data.quaternion+quaternionMul(float4(0,angular_velocity),granule_data.quaternion)*delta_time*0.5);
+    const float4 quaternion=normalize(granule_data.quaternion+quaternionMul(float4(angular_velocity,0),granule_data.quaternion)*delta_time*0.5);
     granule_data_type granule_data_new;
     granule_data_new.position=position;
     granule_data_new.velocity=velocity*0.95;

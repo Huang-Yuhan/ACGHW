@@ -123,9 +123,10 @@ namespace GraduationDesign
             public uint IndexInGranuleData;
             public Vector3 Position;
             public Quaternion Rotation;
+            public Vector3 Velocity;
             public static int GetSize()
             {
-                return sizeof(float) * 3 + sizeof(float) * 4 + sizeof(uint) * 2;
+                return sizeof(float) * 3 + sizeof(float) * 4 + sizeof(uint) * 2+sizeof(float) * 3;
             }
         }
         CPU_TO_GPU_RigidBodyDataType[] _CPU_TO_GPU_RigidBodyData;
@@ -300,14 +301,14 @@ namespace GraduationDesign
                 data.ParticleMass=registerData.ParticleMass;
                 data.IsControlledBySimulation = registerData.isControlledBySimulation;
                 inertia_tensor_list.Add(CalculateRefererenceInertiaTensor(registerData.RigidBodiesParticleInitialOffset).inverse);
-                granuleData[preGranuleCount + i] = data;
+                granuleData[MaxSandGranuleCount + i] = data;
                 for (int j = 0; j < registerData.RigidBodiesParticleInitialOffset.Count; j++)
                 {
                     uint index = (uint)(preParticleCount + j);
                     particlePosition[index] = registerData.Position + registerData.RigidBodiesParticleInitialOffset[j];
                     particleVelocity[index] = registerData.Velocity;
                     if(index<particleIndexToGranuleIndex.Length)
-                        particleIndexToGranuleIndex[index] = (uint)(preGranuleCount+i);
+                        particleIndexToGranuleIndex[index] = (uint)(MaxSandGranuleCount+i);
                     if(index<particleInitialOffset.Length)
                         particleInitialOffset[index] = registerData.RigidBodiesParticleInitialOffset[j];
                     
@@ -585,8 +586,6 @@ namespace GraduationDesign
             cs.Dispatch(_kernels["UpdateParticleKernel"],Mathf.CeilToInt(_currentParticleCount/THREAD_GROUP_SIZE_X), 1, 1);
 
             
-
-
             
 #if DEBUG_APPEND
             

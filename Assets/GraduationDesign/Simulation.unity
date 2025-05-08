@@ -586,7 +586,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 27d838a4694cb5a4183f7485a7b8dfe6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxSandCount: 1
+  maxSandCount: 10000
   particleRadius: 0.07
   particleMass: 1
   mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
@@ -928,6 +928,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Beach_Toy_2
       objectReference: {fileID: 0}
+    - target: {fileID: 3247790320172496603, guid: f1f8f37eb78237c43bf003b7f7b50659, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 6443440183417337069, guid: f1f8f37eb78237c43bf003b7f7b50659, type: 3}
       propertyPath: m_Mesh
       value: 
@@ -968,6 +972,10 @@ PrefabInstance:
     - target: {fileID: 3693774479100512700, guid: 63344022405a48a4d864db31b0285292, type: 3}
       propertyPath: m_Name
       value: Aquarius
+      objectReference: {fileID: 0}
+    - target: {fileID: 3693774479100512700, guid: 63344022405a48a4d864db31b0285292, type: 3}
+      propertyPath: m_IsActive
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6055641381836942228, guid: 63344022405a48a4d864db31b0285292, type: 3}
       propertyPath: m_Mesh
