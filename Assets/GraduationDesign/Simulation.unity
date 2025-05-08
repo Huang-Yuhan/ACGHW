@@ -868,6 +868,10 @@ PrefabInstance:
       propertyPath: mass
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 472054891828783436, guid: f1f8f37eb78237c43bf003b7f7b50659, type: 3}
+      propertyPath: isDisplayParticle
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 1279366290569933963, guid: f1f8f37eb78237c43bf003b7f7b50659, type: 3}
       propertyPath: m_LocalScale.x
       value: 3
@@ -964,6 +968,10 @@ PrefabInstance:
     - target: {fileID: 2231822941184235555, guid: 63344022405a48a4d864db31b0285292, type: 3}
       propertyPath: particle_radius
       value: 0.07
+      objectReference: {fileID: 0}
+    - target: {fileID: 2231822941184235555, guid: 63344022405a48a4d864db31b0285292, type: 3}
+      propertyPath: isDisplayParticle
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 2231822941184235555, guid: 63344022405a48a4d864db31b0285292, type: 3}
       propertyPath: rigidBodyParticleData
