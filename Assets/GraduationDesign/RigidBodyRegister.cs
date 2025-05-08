@@ -164,9 +164,9 @@ namespace GraduationDesign
             computeShader.SetInt("YCount", yCount);
             computeShader.SetInt("ZCount", zCount);
             computeShader.SetFloat("lowerBound", lowerBound);
-            
             computeShader.Dispatch(0, xCount / 8 + 1, yCount / 8 + 1, zCount / 8 + 1);
             
+            Debug.Log("ComputeShader Dispatch Done");
             //计算完毕，获取结果
             ComputeBuffer.CopyCount(resultBuffer, triangleBuffer, 0);
             int[] count = new int[1];
@@ -199,6 +199,7 @@ namespace GraduationDesign
             
             return data;
         }
+        
         Vector3[] getSphereSample(int sampleCount)
         {
             Vector3[] samples = new Vector3[sampleCount];
